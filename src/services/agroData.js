@@ -19,8 +19,8 @@ export function parseDateDDMMYYYY(ddmmyyyy) {
 export function formatCOP(value) {
   const n = Number(value) || 0
   return new Intl.NumberFormat('es-CO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    style: 'currency',
+    currency: 'COP',
   }).format(n)
 }
 

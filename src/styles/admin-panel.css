@@ -2551,3 +2551,77 @@ html.dark-mode .content-container::-webkit-scrollbar-thumb {
 html.dark-mode .content-container::-webkit-scrollbar-thumb:hover {
     background: rgba(125, 255, 176, 0.5);
 }
+
+.costeo-tools {
+    margin: 24px 0;
+    padding: 18px;
+    border: 1px solid var(--border-color, #d8dee8);
+    border-radius: 12px;
+    background: var(--card-background, #fff);
+}
+
+.costeo-tools > summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.costeo-tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 18px;
+}
+
+.costeo-tools-grid section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--border-color, #e1e5eb);
+    border-radius: 8px;
+}
+
+.costeo-tools-grid form,
+.costeo-tools-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.costeo-tools-grid fieldset {
+    display: grid;
+    gap: 8px;
+}
+
+.costeo-tools-grid .costeo-checkbox,
+.costeo-tools-grid .costeo-conversion,
+.costeo-tools-grid .costeo-account-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.costeo-tools-grid .costeo-conversion input[type="number"] {
+    width: 110px;
+}
+
+.costeo-tools-grid .costeo-account-row {
+    flex-wrap: wrap;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color, #e1e5eb);
+}
+
+.costeo-tools-grid .costeo-account-row span {
+    flex: 1 1 100%;
+}
+
+@media (max-width: 720px) {
+    .costeo-tools-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .costeo-tools-grid .costeo-account-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

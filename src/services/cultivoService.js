@@ -1,21 +1,22 @@
 import httpClient from './httpClient.js';
 
-function parseCurrencyParameter(value) {
+function parseCurrencyParameter(value, maxDecimals = 2) {
   if (value == null) return NaN
   if (typeof value === 'number') return Number.isFinite(value) ? value : NaN
-  let str = String(value).trim()
-  if (!str) return NaN
-  str = str.replace(/\s+/g, '').replace(/[^0-9,\.]/g, '')
-  if (!str) return NaN
-
-  const decimalMatch = str.match(/([.,])(\d{1,2})$/)
-  if (decimalMatch) {
-    str = str.slice(0, decimalMatch.index)
-  }
-
-  const normalized = str.replace(/[.,]/g, '')
-  const parsed = Number(normalized)
-  return Number.isFinite(parsed) ? parsed : NaN
+  let text = String(value).trim().replace(/\s/g, '')
+  if (!text) return NaN
+  const negative = text.includes('-')
+  text = text.replace(/[^0-9.,]/g, '')
+  if (!text) return NaN
+  const lastSeparator = Math.max(text.lastIndexOf('.'), text.lastIndexOf(','))
+  const trailingDigits = lastSeparator < 0 ? 0 : text.length - lastSeparator - 1
+  const hasDecimalSeparator = trailingDigits > 0 && trailingDigits <= maxDecimals
+  const integerPart = hasDecimalSeparator
+    ? text.slice(0, lastSeparator).replace(/[.,]/g, '')
+    : text.replace(/[.,]/g, '')
+  const decimalPart = hasDecimalSeparator ? text.slice(lastSeparator + 1) : ''
+  const parsed = Number(`${integerPart || '0'}${decimalPart ? `.${decimalPart}` : ''}`)
+  return Number.isFinite(parsed) ? (negative ? -parsed : parsed) : NaN
 }
 
 export async function fetchCultivosPorFinca(fincaId, estado = 'ACTIVO') {
@@ -101,8 +102,10 @@ export async function fetchEtapasPorCultivo(cultivoId) {
   return response.data?.data ?? response.data;
 }
 
-export async function fetchAllEtapasCatalog() {
-  const response = await httpClient.get('/api/etapas');
+export async function fetchAllEtapasCatalog(tipoCultivoId = null) {
+  const response = await httpClient.get('/api/etapas', {
+    params: tipoCultivoId ? { tipoCultivoId } : {},
+  });
   return response.data?.data ?? response.data;
 }
 
@@ -209,7 +212,7 @@ export async function fetchCosechasPorCultivo(cultivoId) {
 
 export async function createCosecha(cultivoId, { cantidad, idunidadmedida, precio, idtipo_precio }) {
   const response = await httpClient.post(`/api/cultivos/${cultivoId}/cosechas`, {
-    cantidad: parseCurrencyParameter(cantidad),
+    cantidad: parseCurrencyParameter(cantidad, 3),
     idunidadmedida,
     precio: parseCurrencyParameter(precio),
     idtipo_precio,
@@ -219,7 +222,7 @@ export async function createCosecha(cultivoId, { cantidad, idunidadmedida, preci
 
 export async function updateCosecha(idcosecha, { cantidad, idunidadmedida, precio, idtipo_precio }) {
   const response = await httpClient.put(`/api/cosechas/${idcosecha}`, {
-    cantidad: parseCurrencyParameter(cantidad),
+    cantidad: parseCurrencyParameter(cantidad, 3),
     idunidadmedida,
     precio: parseCurrencyParameter(precio),
     idtipo_precio,

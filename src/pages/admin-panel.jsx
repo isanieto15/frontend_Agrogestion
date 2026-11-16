@@ -14,6 +14,7 @@ import ReasonModal from '../components/ReasonModal'
 import { StateFilterMenu } from '../components/StateFilters'
 import { clearRentabilidadCharts, updateAdminDashboardCharts, updateRentabilidadCharts } from './admin/adminCharts'
 import { AdminReportTable } from './admin/AdminReportViews'
+import AdminCostingTools from './admin/AdminCostingTools'
 import '../styles/dashboard.css'
 import '../styles/admin-panel.css'
 import { fetchFincas, createFinca, updateFinca, deleteFinca, changeFincaState } from '../services/fincaService'
@@ -345,6 +346,8 @@ export default function AdminPanel() {
   const [filtroFechaInicio, setFiltroFechaInicio] = useState('')
   const [filtroFechaFin, setFiltroFechaFin] = useState('')
   const [filtroCultivo, setFiltroCultivo] = useState('')
+  const [filtroTipoCultivo, setFiltroTipoCultivo] = useState('')
+  const [filtroEtapa, setFiltroEtapa] = useState('')
   const [filtroCategoriaCosto, setFiltroCategoriaCosto] = useState('')
   const [filtroSubcategoriaCosto, setFiltroSubcategoriaCosto] = useState('')
   const [filtroUsuario, setFiltroUsuario] = useState('')
@@ -353,7 +356,9 @@ export default function AdminPanel() {
   const [filterOptions, setFilterOptions] = useState({ cultivos: [], usuarios: [], estados: [], categorias: [], subcategorias: [] })
   const [estadoOptions, setEstadoOptions] = useState([])
   const [reportData, setReportData] = useState(null)
+  const [reportModel, setReportModel] = useState(null)
   const [isLoadingReport, setIsLoadingReport] = useState(false)
+  const [isExportingReport, setIsExportingReport] = useState(false)
   const [reportMessage, setReportMessage] = useState(null)
   // Variable para forzar recarga de fincas cuando se agrega una nueva.
   const [fincasRefresh, setFincasRefresh] = useState(0)
@@ -447,7 +452,6 @@ export default function AdminPanel() {
   const dynamicModalInitialData = modalInitialData ?? memoizedModalInitialData
 
   // Refs para elementos DOM y gráficos.
-  const reportRef = useRef(null)
   const dashboardRequestIdRef = useRef(0)
   const cpRef = useRef(null)
   const ccRef = useRef(null)
@@ -807,7 +811,8 @@ export default function AdminPanel() {
       return
     }
     try {
-      const list = await fetchAllEtapasCatalog()
+      const crop = cultivos.find((item) => Number(item.id) === Number(selectedCultivoId))
+      const list = await fetchAllEtapasCatalog(crop?.idtipocultivo)
       const etapasArr = Array.isArray(list) ? list : []
       setEtapasCatalog(etapasArr)
       // Prepare DynamicModal options and open it
@@ -908,7 +913,8 @@ export default function AdminPanel() {
   const handleOpenEditEtapa = async (etapa) => {
     try {
       // Cargar catálogo de etapas
-      const list = await fetchAllEtapasCatalog()
+      const crop = cultivos.find((item) => Number(item.id) === Number(selectedCultivoId))
+      const list = await fetchAllEtapasCatalog(crop?.idtipocultivo)
       const etapasArr = Array.isArray(list) ? list : []
 
       // Cargar estados
@@ -1199,6 +1205,8 @@ export default function AdminPanel() {
   const buildFiltersObject = (tipo) => ({
     fincaId: fincaId ? Number(fincaId) : null,
     cultivoId: filtroCultivo ? Number(filtroCultivo) : null,
+    tipoCultivoId: filtroTipoCultivo ? Number(filtroTipoCultivo) : null,
+    etapaId: filtroEtapa ? Number(filtroEtapa) : null,
     categoriaId: tipo !== 'produccion' && filtroCategoriaCosto ? Number(filtroCategoriaCosto) : null,
     subcategoriaId: tipo !== 'produccion' && filtroSubcategoriaCosto ? Number(filtroSubcategoriaCosto) : null,
     usuarioId: filtroUsuario ? Number(filtroUsuario) : null,
@@ -1237,19 +1245,22 @@ export default function AdminPanel() {
 
       if (!res || res.success === false) {
         setReportData([])
+        setReportModel(null)
         setReportMessage(res?.error || 'Error ejecutando reporte')
       } else {
         setReportData(res.data || [])
+        setReportModel(res.model || null)
         setReportMessage(res.message || null)
       }
     } catch (error) {
       console.error('fetchReport error', error)
       setReportData([])
+      setReportModel(null)
       setReportMessage('Error de conexión')
     } finally {
       setIsLoadingReport(false)
     }
-  }, [buildFiltersObject, fincaId, filtroCategoriaCosto, filtroCultivo, filtroEstadoCultivo, filtroFechaFin, filtroFechaInicio, filtroSubcategoriaCosto, filtroUsuario])
+  }, [buildFiltersObject, fincaId, filtroCategoriaCosto, filtroCultivo, filtroEstadoCultivo, filtroEtapa, filtroFechaFin, filtroFechaInicio, filtroSubcategoriaCosto, filtroTipoCultivo, filtroUsuario])
 
   const openReport = async (tipo) => {
     setReportType(tipo)
@@ -3105,32 +3116,20 @@ export default function AdminPanel() {
 
   // (openReport definido más abajo con carga de datos)
 
-  // Exporta el reporte visible a PDF usando html2pdf.
-  const exportPdf = async () => {
-    if (!reportRef.current) return
-    await reportService.registerReportExport(reportType, 'PDF', buildFiltersObject())
-    const html2pdf = (await import('html2pdf.js')).default
-    const opt = {
-      margin: 10,
-      filename: `reporte-${reportType}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' },
+  const exportReport = async (format) => {
+    if (!reportType || !fincaId) {
+      showNotification('Selecciona una finca y un tipo de reporte antes de exportar.', 'error')
+      return
     }
-    html2pdf().set(opt).from(reportRef.current).save()
-  }
-
-  // Exporta el reporte visible a Excel usando XLSX.
-  const exportExcel = async () => {
-    if (!reportRef.current) return
-    await reportService.registerReportExport(reportType, 'EXCEL', buildFiltersObject())
-    const XLSX = await import('xlsx')
-    const table = reportRef.current.querySelector('.data-table')
-    if (!table) return
-    const ws = XLSX.utils.table_to_sheet(table)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, `Reporte-${reportType}`)
-    XLSX.writeFile(wb, `reporte-${reportType}.xlsx`)
+    setIsExportingReport(true)
+    try {
+      await reportService.exportReportFile(reportType, format, buildFiltersObject(reportType))
+      showNotification('Reporte generado y descargado correctamente.', 'success')
+    } catch (error) {
+      showNotification(error.message || 'No se pudo exportar el reporte.', 'error')
+    } finally {
+      setIsExportingReport(false)
+    }
   }
 
   const recentActivities = dashboardData?.recentActivities || []
@@ -3420,6 +3419,11 @@ export default function AdminPanel() {
                 )}
               </div>
             </div>
+            <AdminCostingTools
+              fincaId={fincaId}
+              filterOptions={filterOptions}
+              onNotify={showNotification}
+            />
           </section>
 
           {/* Sección de gestión de fincas: lista, búsqueda y botones de acción. */}
@@ -4346,6 +4350,34 @@ export default function AdminPanel() {
                     </select>
                   </div>
                   <div className="filtro-group">
+                    <label>Tipo de cultivo</label>
+                    <select
+                      id="filtroTipoCultivo"
+                      className="filtro-select"
+                      value={filtroTipoCultivo}
+                      onChange={(e) => setFiltroTipoCultivo(e.target.value)}
+                    >
+                      <option value="">Todos los tipos</option>
+                      {(filterOptions.tiposCultivo || []).map((tipo) => (
+                        <option key={tipo.id} value={tipo.id}>{tipo.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="filtro-group">
+                    <label>Etapa</label>
+                    <select
+                      id="filtroEtapa"
+                      className="filtro-select"
+                      value={filtroEtapa}
+                      onChange={(e) => setFiltroEtapa(e.target.value)}
+                    >
+                      <option value="">Todas las etapas</option>
+                      {(filterOptions.etapas || []).map((etapa) => (
+                        <option key={etapa.id} value={etapa.id}>{etapa.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="filtro-group">
                     <label>Categoría de Costo</label>
                     <select id="filtroCategoriaCosto" className="filtro-select" value={filtroCategoriaCosto} disabled={reportType === 'produccion'} onChange={(e) => {
                       setFiltroCategoriaCosto(e.target.value)
@@ -4424,11 +4456,14 @@ export default function AdminPanel() {
                         setFiltroFechaInicio('')
                         setFiltroFechaFin('')
                         setFiltroCultivo('')
+                        setFiltroTipoCultivo('')
+                        setFiltroEtapa('')
                         setFiltroCategoriaCosto('')
                         setFiltroSubcategoriaCosto('')
                         setFiltroUsuario('')
                         setFiltroEstadoCultivo('')
                         setReportData(null)
+                        setReportModel(null)
                         setReportMessage(null)
                         showNotification('Filtros limpiados', 'info')
                       }}
@@ -4457,7 +4492,6 @@ export default function AdminPanel() {
               </div>
               <div
                 id="reporteContenedor"
-                ref={reportRef}
                 className="reporte-contenedor"
                 style={{ display: reportVisible ? 'block' : 'none' }}
                 data-last-reporte={reportType || ''}
@@ -4469,14 +4503,17 @@ export default function AdminPanel() {
                     ) : reportMessage ? (
                       <div style={{ padding: 20 }}>{reportMessage}</div>
                     ) : (
-                      <AdminReportTable fincaId={fincaId} reportType={reportType} reportData={reportData} />
+                      <AdminReportTable fincaId={fincaId} reportType={reportType} reportData={reportData} reportModel={reportModel} />
                     )}
                     <div className="reporte-exportar">
-                      <button type="button" className="btn-exportar pdf" onClick={() => exportPdf()}>
+                      <button type="button" className="btn-exportar pdf" disabled={isExportingReport || isLoadingReport} onClick={() => exportReport('pdf')}>
                         Exportar PDF
                       </button>
-                      <button type="button" className="btn-exportar excel" onClick={() => exportExcel()}>
+                      <button type="button" className="btn-exportar excel" disabled={isExportingReport || isLoadingReport} onClick={() => exportReport('xlsx')}>
                         Exportar Excel
+                      </button>
+                      <button type="button" className="btn-exportar excel" disabled={isExportingReport || isLoadingReport} onClick={() => exportReport('csv')}>
+                        Exportar CSV
                       </button>
                     </div>
                   </>

@@ -557,7 +557,7 @@ export default function WorkerPanel() {
     }
 
     try {
-      const list = await fetchAllEtapasCatalog()
+      const list = await fetchAllEtapasCatalog(selectedCultivo.idtipocultivo)
       const etapasArr = Array.isArray(list) ? list : []
       setModalFieldOptions({
         idetapa: etapasArr.map((e) => ({ value: String(e.id), label: e.nombre })),
@@ -627,7 +627,7 @@ export default function WorkerPanel() {
 
   const handleOpenEditEtapa = async (etapa) => {
     try {
-      const list = await fetchAllEtapasCatalog()
+      const list = await fetchAllEtapasCatalog(selectedCultivo.idtipocultivo)
       const etapasArr = Array.isArray(list) ? list : []
       const estadosResponse = await fetchEstados()
       const estadosArr = Array.isArray(estadosResponse)

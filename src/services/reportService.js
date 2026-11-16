@@ -9,7 +9,7 @@ async function getJson(response) {
 
 function normalizeReportFilters(filters = {}) {
   const normalized = { ...filters };
-  for (const key of ['fincaId', 'cultivoId', 'categoriaId', 'subcategoriaId', 'usuarioId', 'estadoId']) {
+  for (const key of ['fincaId', 'cultivoId', 'categoriaId', 'subcategoriaId', 'usuarioId', 'estadoId', 'tipoCultivoId', 'etapaId']) {
     const value = filters[key];
     if (value === '' || value == null) {
       normalized[key] = null;
@@ -139,14 +139,40 @@ export async function fetchReportQuery(reportType, filters = {}) {
   }
 }
 
-export async function registerReportExport(reportType, formato, filtros = {}) {
+export async function exportReportFile(tipo, formato, filtros = {}) {
+  let response
   try {
-    const response = await httpClient.post('/api/reportes/audit-export', { reportType, formato, filtros });
-    return await getJson(response.data);
+    response = await httpClient.post(
+      '/api/reportes/export',
+      { tipo, formato, filtros: normalizeReportFilters(filtros) },
+      { responseType: 'blob' }
+    )
   } catch (error) {
-    console.error('registerReportExport error', error);
-    return { success: false, error: error.response?.data?.message || 'Error de red' };
+    const responseBlob = error.response?.data
+    let message = error.response?.data?.message || error.message || 'No se pudo exportar el reporte.'
+    if (responseBlob instanceof Blob) {
+      try {
+        const payload = JSON.parse(await responseBlob.text())
+        message = payload.message || message
+      } catch {
+        message = 'No se pudo exportar el reporte.'
+      }
+    }
+    throw new Error(message, { cause: error })
   }
+
+  const blob = new Blob([response.data], { type: response.headers['content-type'] })
+  const disposition = response.headers['content-disposition'] || ''
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] || `reporte-${tipo}.${formato}`
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return filename
 }
 
 export default {
@@ -157,5 +183,5 @@ export default {
   fetchReportRentabilidad,
   fetchReportTrabajador,
   fetchReportQuery,
-  registerReportExport,
+  exportReportFile,
 };
