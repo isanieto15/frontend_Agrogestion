@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { getAccessToken, setAccessToken, clearTokens } from './authSession.js';
+import { resolveApiUrl } from './apiUrl.js';
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = resolveApiUrl(import.meta.env.VITE_API_URL, import.meta.env.PROD);
 
 if (!API_URL) {
   console.warn(
