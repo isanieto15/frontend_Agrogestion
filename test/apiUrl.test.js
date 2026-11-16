@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveApiUrl } from '../src/services/apiUrl.js';
+import { PRODUCTION_API_URL, resolveApiUrl } from '../src/services/apiUrl.js';
 
-test('production API URLs use HTTPS to avoid POST-to-GET redirects', () => {
-  assert.equal(resolveApiUrl('http://api.example.com', true), 'https://api.example.com');
-  assert.equal(resolveApiUrl('https://api.example.com', true), 'https://api.example.com');
+test('production uses the verified HTTPS backend URL', () => {
+  assert.equal(resolveApiUrl('http://old-api.example.com', true), PRODUCTION_API_URL);
+  assert.equal(PRODUCTION_API_URL, 'https://backend-lyc0.onrender.com');
 });
 
 test('development API URLs keep their configured protocol', () => {
