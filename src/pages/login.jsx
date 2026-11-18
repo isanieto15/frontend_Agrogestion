@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import * as Agro from '../services/agroData'
 import { loginUser, requestPasswordReset, verifyResetCode, recoverPassword } from '../services/authApi'
 import { setSession, setAccessToken } from '../services/authSession'
+import { normalizeRole } from '../utils/normalizeRole'
 import '../styles/login.css'
 
 export default function Login() {
@@ -60,21 +61,7 @@ export default function Login() {
 
     if (result.success) {
       const { id, email: userEmail, nombre, apellidos = '', role: rawRole, accessToken } = result.data
-      const normalizedRole = String(rawRole || '')
-        .trim()
-        .toLowerCase()
-        .replace(/á/g, 'a')
-        .replace(/é/g, 'e')
-        .replace(/í/g, 'i')
-        .replace(/ó/g, 'o')
-        .replace(/ú/g, 'u')
-
-      const role =
-        normalizedRole === 'admin' ||
-        normalizedRole === 'administrador' ||
-        normalizedRole === '1'
-          ? 'admin'
-          : 'worker'
+      const role = normalizeRole(rawRole) || 'worker'
 
       // Guardar el access token en memoria
       if (accessToken) {

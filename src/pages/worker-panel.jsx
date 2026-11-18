@@ -11,6 +11,7 @@ import { DynamicModal } from '../components/DynamicModal'
 import ReasonModal from '../components/ReasonModal'
 import { StateFilterMenu } from '../components/StateFilters'
 import { fetchFincasPorUsuario, fetchCultivosPorUsuario } from '../services/asignaciones-usuarioAPI'
+import { normalizeRole } from '../utils/normalizeRole'
 import {
   fetchCultivoDetalle,
   fetchCategoriasCosto,
@@ -192,7 +193,7 @@ export default function WorkerPanel() {
   const session = useAuthSession()
 
   const worker = useMemo(() => {
-    if (!session || session.role !== 'worker') return null
+    if (!session || normalizeRole(session.role) !== 'worker') return null
 
     if (session.workerKey) {
       const foundByKey = Agro.getTrabajadorByKey(session.workerKey)
@@ -282,7 +283,7 @@ export default function WorkerPanel() {
   const [isLoadingCultivosFinca, setIsLoadingCultivosFinca] = useState(false)
 
   useEffect(() => {
-    if (!session || session.role !== 'worker') {
+    if (!session || normalizeRole(session.role) !== 'worker') {
       navigate('/', { replace: true })
     }
   }, [session, navigate])

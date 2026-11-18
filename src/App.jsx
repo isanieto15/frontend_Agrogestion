@@ -6,21 +6,7 @@ import useAuthSession from './hooks/useAuthSession'
 import Login from './pages/login'
 import AdminPanel from './pages/admin-panel'
 import WorkerPanel from './pages/worker-panel'
-
-function normalizeRole(role) {
-  const value = String(role || '')
-    .trim()
-    .toLowerCase()
-    .replace(/á/g, 'a')
-    .replace(/é/g, 'e')
-    .replace(/í/g, 'i')
-    .replace(/ó/g, 'o')
-    .replace(/ú/g, 'u')
-
-  if (value === 'admin' || value === 'administrador' || value === '1') return 'admin'
-  if (value === 'worker' || value === 'trabajador' || value === '2') return 'worker'
-  return ''
-}
+import { normalizeRole } from './utils/normalizeRole'
 
 function RequireAdmin({ children }) {
   const s = useAuthSession()
