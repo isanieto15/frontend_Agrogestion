@@ -42,3 +42,15 @@ export function getCropProductionSummary(data) {
     pendingConversions,
   }
 }
+
+export function getWorkerProductionSummary(summary) {
+  if (!summary || !(Number(summary.harvestCount) > 0)) {
+    return {
+      productionValue: '—',
+      excludedHarvestCount: Number(summary?.excludedHarvestCount) || 0,
+      excludedCropCount: Number(summary?.excludedCropCount) || 0,
+      pendingConversions: Array.isArray(summary?.pendingConversions) ? summary.pendingConversions : [],
+    }
+  }
+  return getCropProductionSummary([{ production_summary: summary }])
+}

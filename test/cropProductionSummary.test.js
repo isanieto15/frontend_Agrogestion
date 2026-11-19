@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getCropProductionSummary } from '../src/pages/admin/cropProductionSummary.js'
+import {
+  getCropProductionSummary,
+  getWorkerProductionSummary,
+} from '../src/pages/admin/cropProductionSummary.js'
 
 function reportRow(productionSummary) {
   return { production_summary: productionSummary }
@@ -83,4 +86,17 @@ test('no harvests explain why the total is unavailable', () => {
   ])
 
   assert.equal(result.productionValue, 'No comparable: no hay cosechas para los filtros seleccionados')
+})
+
+test('assigned crops without harvests show an empty production value', () => {
+  const result = getWorkerProductionSummary({
+    totalsByBaseUnit: [],
+    totalsByOriginalUnit: [],
+    excludedHarvestCount: 0,
+    excludedCropCount: 0,
+    pendingConversions: [],
+    harvestCount: 0,
+  })
+
+  assert.equal(result.productionValue, '—')
 })

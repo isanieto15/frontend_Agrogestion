@@ -357,6 +357,7 @@ export default function AdminPanel() {
   const [estadoOptions, setEstadoOptions] = useState([])
   const [reportData, setReportData] = useState(null)
   const [reportModel, setReportModel] = useState(null)
+  const [reportSource, setReportSource] = useState(null)
   const [isLoadingReport, setIsLoadingReport] = useState(false)
   const [isExportingReport, setIsExportingReport] = useState(false)
   const [reportMessage, setReportMessage] = useState(null)
@@ -1246,16 +1247,19 @@ export default function AdminPanel() {
       if (!res || res.success === false) {
         setReportData([])
         setReportModel(null)
+        setReportSource(null)
         setReportMessage(res?.error || 'Error ejecutando reporte')
       } else {
         setReportData(res.data || [])
         setReportModel(res.model || null)
+        setReportSource(tipo === 'trabajador' ? (res.fuente || res.data?.[0]?.fuente || null) : null)
         setReportMessage(res.message || null)
       }
     } catch (error) {
       console.error('fetchReport error', error)
       setReportData([])
       setReportModel(null)
+      setReportSource(null)
       setReportMessage('Error de conexión')
     } finally {
       setIsLoadingReport(false)
@@ -1265,6 +1269,7 @@ export default function AdminPanel() {
   const openReport = async (tipo) => {
     setReportType(tipo)
     setReportVisible(true)
+    setReportSource(null)
     await fetchReport(tipo)
   }
 
@@ -4471,6 +4476,7 @@ export default function AdminPanel() {
                         setFiltroEstadoCultivo('')
                         setReportData(null)
                         setReportModel(null)
+                        setReportSource(null)
                         setReportMessage(null)
                         showNotification('Filtros limpiados', 'info')
                       }}
@@ -4507,16 +4513,27 @@ export default function AdminPanel() {
                   <>
                     {isLoadingReport ? (
                       <div style={{ padding: 20 }}>Cargando reporte...</div>
-                    ) : reportMessage ? (
-                      <div style={{ padding: 20 }}>{reportMessage}</div>
                     ) : (
-                      <AdminReportTable
-                        fincaId={fincaId}
-                        reportType={reportType}
-                        reportData={reportData}
-                        reportModel={reportModel}
-                        onNavigateToConversions={openUnitConversions}
-                      />
+                      <>
+                        {reportType === 'trabajador' && reportSource === 'asignaciones' ? (
+                          <div>
+                            <p role="alert">Pagos por trabajador no disponibles: requiere la migración 002 (pendiente de aplicar)</p>
+                            <p>Las asignaciones no tienen fechas; el rango solo afecta producción y costos. La producción de cultivos compartidos aparece completa para cada usuario y no es individual.</p>
+                          </div>
+                        ) : null}
+                        {reportMessage ? (
+                          <div style={{ padding: 20 }}>{reportMessage}</div>
+                        ) : (
+                          <AdminReportTable
+                            fincaId={fincaId}
+                            reportType={reportType}
+                            reportData={reportData}
+                            reportModel={reportModel}
+                            reportSource={reportSource}
+                            onNavigateToConversions={openUnitConversions}
+                          />
+                        )}
+                      </>
                     )}
                     <div className="reporte-exportar">
                       <button type="button" className="btn-exportar pdf" disabled={isExportingReport || isLoadingReport} onClick={() => exportReport('pdf')}>

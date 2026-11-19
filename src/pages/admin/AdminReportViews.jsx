@@ -1,4 +1,4 @@
-import { getCropProductionSummary } from './cropProductionSummary'
+import { getCropProductionSummary, getWorkerProductionSummary } from './cropProductionSummary'
 
 const copFormatter = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -9,7 +9,7 @@ function formatCOP(value) {
   return copFormatter.format(Number(value) || 0)
 }
 
-export function AdminReportTable({ reportType, reportData, reportModel, onNavigateToConversions }) {
+export function AdminReportTable({ reportType, reportData, reportModel, reportSource, onNavigateToConversions }) {
   const data = Array.isArray(reportData) ? reportData : []
   const cropRows = [...new Map(data.map((row) => [row.id, row])).values()]
   const resumen = {
@@ -345,6 +345,86 @@ export function AdminReportTable({ reportType, reportData, reportModel, onNaviga
   }
 
   if (reportType === 'trabajador') {
+    const fuente = reportSource || data[0]?.fuente
+    if (fuente === 'asignaciones') {
+      const displayRows = data.map((row) => {
+        const summary = row.production_summary
+        const production = getWorkerProductionSummary(summary)
+        return {
+          ...row,
+          produccion: production.productionValue,
+          cosechasExcluidas: production.excludedHarvestCount || 0,
+          cultivosExcluidos: production.excludedCropCount || 0,
+          conversionesPendientes: production.pendingConversions || [],
+          fincas: Array.isArray(row.fincas) ? row.fincas : [],
+          cultivos: Array.isArray(row.cultivos) ? row.cultivos : [],
+        }
+      })
+      const hasPendingConversions = displayRows.some((row) => row.conversionesPendientes.length > 0)
+
+      return (
+        <div>
+          <div className="reporte-header">
+            <h3>Trabajadores y asignaciones</h3>
+          </div>
+          {hasPendingConversions && onNavigateToConversions ? (
+            <button type="button" className="btn-primary" onClick={onNavigateToConversions}>
+              Configurar conversiones
+            </button>
+          ) : null}
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Usuario</th>
+                <th>Fincas asignadas (conteo y nombres)</th>
+                <th>Cultivos asignados (conteo y nombres)</th>
+                <th>Producción de sus cultivos (compartida con el equipo, no individual)</th>
+                <th>Costos registrados</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayRows.length === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 20 }}>Sin resultados para los filtros seleccionados</td></tr>
+              ) : displayRows.map((row) => (
+                <tr key={row.id ?? 'sin-usuario'}>
+                  <td>
+                    <strong>{row.nombre}</strong>
+                    {row.rol || row.estado ? <><br /><small>{[row.rol, row.estado].filter(Boolean).join(' · ')}</small></> : null}
+                  </td>
+                  <td>{Number(row.fincas_asignadas) || 0}{row.fincas.length ? ` · ${row.fincas.join(', ')}` : ''}</td>
+                  <td>{Number(row.cultivos_asignados) || 0}{row.cultivos.length ? ` · ${row.cultivos.join(', ')}` : ''}</td>
+                  <td>
+                    {row.produccion}
+                    {row.cosechasExcluidas > 0 ? (
+                      <>
+                        <br />
+                        <small>Excluye {row.cosechasExcluidas} cosechas / {row.cultivosExcluidos} cultivos sin conversión.</small>
+                        {row.conversionesPendientes.length > 0 ? (
+                          <>
+                            <br />
+                            <small>
+                              Pendiente: {row.conversionesPendientes
+                                .map((item) => `${item.cultivo} (${item.unidad})`)
+                                .join(', ')}
+                            </small>
+                          </>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </td>
+                  <td>{formatCOP(row.costos_registrados)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+
+    if (fuente !== 'pagos') {
+      return <p role="alert">No se puede mostrar el reporte: la fuente de datos no está identificada.</p>
+    }
+
     const displayRows = data.map((row) => ({
       id: row.id,
       nombre: row.nombre,
