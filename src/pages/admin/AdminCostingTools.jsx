@@ -492,7 +492,7 @@ export default function AdminCostingTools({ fincaId, filterOptions, onNotify }) 
           </fieldset>
         </section>
 
-        <section>
+        <section id="conversiones-unidades-costeo">
           <h3>Conversión de unidades</h3>
           <p>Factor = cantidad en la unidad base por cada unidad indicada.</p>
           <label>

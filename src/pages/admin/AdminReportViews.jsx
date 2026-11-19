@@ -1,3 +1,5 @@
+import { getCropProductionSummary } from './cropProductionSummary'
+
 const copFormatter = new Intl.NumberFormat('es-CO', {
   style: 'currency',
   currency: 'COP',
@@ -7,20 +9,22 @@ function formatCOP(value) {
   return copFormatter.format(Number(value) || 0)
 }
 
-export function AdminReportTable({ reportType, reportData, reportModel }) {
+export function AdminReportTable({ reportType, reportData, reportModel, onNavigateToConversions }) {
   const data = Array.isArray(reportData) ? reportData : []
   const cropRows = [...new Map(data.map((row) => [row.id, row])).values()]
   const resumen = {
-    produccionKg: data.reduce((total, row) => total + (Number(row.total_produccion) || 0), 0),
     ingresos: data.reduce((total, row) => total + (Number(row.total_ingresos) || 0), 0),
   }
-  const productionUnits = new Set(data.map((row) => row.unidad_base).filter(Boolean))
-  const productionRows = data.filter((row) => row.total_produccion != null)
-  const productionComparable = productionRows.length > 0 &&
-    productionRows.every((row) => row.unidad_base) &&
-    productionUnits.size === 1
 
   if (reportType === 'por-cultivo') {
+    const {
+      productionValue,
+      hasProductionSummary,
+      excludedHarvestCount,
+      excludedCropCount,
+      pendingConversions,
+    } = getCropProductionSummary(data)
+
     return (
       <div>
         <div className="reporte-header">
@@ -38,10 +42,23 @@ export function AdminReportTable({ reportType, reportData, reportModel }) {
           <div className="resumen-item">
             <label>Producción Total</label>
             <div className="valor">
-              {productionComparable
-                ? `${resumen.produccionKg.toLocaleString('es-CO')} ${[...productionUnits][0]}`
-                : 'No comparable (configure conversiones)'}
+              {productionValue}
             </div>
+            {hasProductionSummary && excludedHarvestCount > 0 ? (
+              <div className="reporte-produccion-aviso">
+                <p>Excluye {excludedHarvestCount} cosechas / {excludedCropCount} cultivos sin conversión.</p>
+                {pendingConversions.length > 0 ? (
+                  <p>
+                    Pendientes: {pendingConversions.map((item) => `${item.cultivo} (${item.unidad})`).join(', ')}.
+                  </p>
+                ) : null}
+                {onNavigateToConversions ? (
+                  <button type="button" className="btn-primary" onClick={onNavigateToConversions}>
+                    Configurar conversiones
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <div className="resumen-item">
             <label>Ingresos Totales</label>

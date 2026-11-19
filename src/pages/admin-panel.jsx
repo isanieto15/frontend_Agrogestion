@@ -3023,6 +3023,13 @@ export default function AdminPanel() {
     setActiveSection(sectionId)
   }
 
+  const openUnitConversions = () => {
+    switchSection('dashboard')
+    window.setTimeout(() => {
+      document.getElementById('conversiones-unidades-costeo')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 0)
+  }
+
   // Cambia la finca seleccionada y notifica al usuario.
   const onFincaChange = (id) => {
     Agro.setSelectedFincaId(id)
@@ -4503,7 +4510,13 @@ export default function AdminPanel() {
                     ) : reportMessage ? (
                       <div style={{ padding: 20 }}>{reportMessage}</div>
                     ) : (
-                      <AdminReportTable fincaId={fincaId} reportType={reportType} reportData={reportData} reportModel={reportModel} />
+                      <AdminReportTable
+                        fincaId={fincaId}
+                        reportType={reportType}
+                        reportData={reportData}
+                        reportModel={reportModel}
+                        onNavigateToConversions={openUnitConversions}
+                      />
                     )}
                     <div className="reporte-exportar">
                       <button type="button" className="btn-exportar pdf" disabled={isExportingReport || isLoadingReport} onClick={() => exportReport('pdf')}>

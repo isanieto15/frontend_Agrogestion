@@ -604,6 +604,17 @@
     font-family: 'Playfair Display', serif;
 }
 
+.reporte-produccion-aviso {
+    margin-top: 8px;
+    font-size: 0.85em;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.reporte-produccion-aviso p {
+    margin: 0 0 6px;
+}
+
 .reporte-exportar {
     display: flex;
     gap: 10px;
