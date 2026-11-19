@@ -4515,12 +4515,6 @@ export default function AdminPanel() {
                       <div style={{ padding: 20 }}>Cargando reporte...</div>
                     ) : (
                       <>
-                        {reportType === 'trabajador' && reportSource === 'asignaciones' ? (
-                          <div>
-                            <p role="alert">Pagos por trabajador no disponibles: requiere la migración 002 (pendiente de aplicar)</p>
-                            <p>Las asignaciones no tienen fechas; el rango solo afecta producción y costos. La producción de cultivos compartidos aparece completa para cada usuario y no es individual.</p>
-                          </div>
-                        ) : null}
                         {reportMessage ? (
                           <div style={{ padding: 20 }}>{reportMessage}</div>
                         ) : (
