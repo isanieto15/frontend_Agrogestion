@@ -92,6 +92,22 @@ export async function fetchUsers(estado = 'ACTIVO') {
   }
 }
 
+export async function requestUserPasswordReset(id, motivo = '') {
+  try {
+    const response = await httpClient.post(`/auth/users/${id}/request-reset`, { motivo });
+    return {
+      success: Boolean(response.data.success),
+      message: response.data.message || 'No se pudo enviar el código de recuperación.',
+    };
+  } catch (error) {
+    console.error('Error en requestUserPasswordReset:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Error de conexión con el servidor',
+    };
+  }
+}
+
 export async function createUser(userData) {
   try {
     const response = await httpClient.post('/auth/users', userData);

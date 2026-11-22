@@ -83,13 +83,6 @@ export const getModalConfig = (type) => {
           required: true,
         },
         {
-          name: 'contraseña',
-          label: 'Contraseña',
-          type: 'password',
-          placeholder: 'Mínimo 8 caracteres',
-          required: true,
-        },
-        {
           name: 'rol',
           label: 'Rol',
           type: 'select',

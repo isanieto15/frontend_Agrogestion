@@ -4,12 +4,14 @@ import * as Agro from '../services/agroData'
 import { clearTokens } from '../services/authSession'
 import useAuthSession from '../hooks/useAuthSession'
 import useSounds from '../hooks/useSounds'
-import { logoutUser, fetchUsers, createUser, updateUser, deleteUser, changeUserState } from '../services/authApi'
+import { logoutUser, fetchUsers, createUser, updateUser, deleteUser, changeUserState, requestUserPasswordReset } from '../services/authApi'
 import { fetchCultivosEnProceso } from '../services/asignaciones-usuarioAPI'
 import { formatMateriaPrimaDetalles, totalMateriaPrimaDetalles } from '../utils/materiaPrimaDetalles'
 import Header from '../components/Header'
 import Sidebar from '../components/Sidebar'
 import DynamicModal from '../components/DynamicModal'
+import CatalogManagement from '../components/CatalogManagement'
+import AdminAudit from '../components/AdminAudit'
 import ReasonModal from '../components/ReasonModal'
 import { StateFilterMenu } from '../components/StateFilters'
 import { clearRentabilidadCharts, updateAdminDashboardCharts, updateRentabilidadCharts } from './admin/adminCharts'
@@ -34,6 +36,7 @@ const SECTION_TITLES = {
   usuarios: 'Gestión de Usuarios',
   cultivos: 'Gestión de Cultivos',
   reportes: 'Reportes',
+  auditoria: 'Auditoría',
   costos: 'Costos Generales',
   rentabilidad: 'Análisis de Rentabilidad',
   configuracion: 'Configuración',
@@ -509,7 +512,6 @@ export default function AdminPanel() {
       nombre: editingUser.nombre || '',
       apellidos: editingUser.apellidos || '',
       correo: editingUser.email || '',
-      contraseña: editingUser.password || '',
       rol: editingUser.rol?.toLowerCase() || '',
       fincas: Array.isArray(editingUser.fincas) ? editingUser.fincas.map(Number).filter(Boolean) : [],
       cultivos: Array.isArray(editingUser.cultivos) ? editingUser.cultivos.map(Number).filter(Boolean) : [],
@@ -2196,6 +2198,38 @@ export default function AdminPanel() {
     })
   }
 
+  const handleRequestUserPasswordReset = async (usuario) => {
+    const confirmation = await Swal.fire({
+      title: 'Enviar código de restablecimiento',
+      text: `Se enviará un código de un solo uso a ${usuario.email}. El usuario elegirá su nueva contraseña desde “Olvidé mi contraseña”.`,
+      input: 'textarea',
+      inputLabel: 'Motivo (opcional)',
+      inputPlaceholder: 'No incluyas contraseñas ni información sensible.',
+      inputAttributes: { maxLength: 300 },
+      showCancelButton: true,
+      confirmButtonText: 'Enviar código',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#4a7c59',
+      preConfirm: (value) => {
+        if (value && value.length > 300) {
+          Swal.showValidationMessage('El motivo no puede superar 300 caracteres.')
+          return false
+        }
+        return value || ''
+      },
+    })
+
+    if (!confirmation.isConfirmed) return
+
+    const response = await requestUserPasswordReset(usuario.id, confirmation.value)
+    if (!response.success) {
+      showNotification(response.message, 'error')
+      playError()
+      return
+    }
+    showNotification(response.message, 'success')
+  }
+
   // Elimina un cultivo después de pedir confirmación.
   const handleDeleteCultivo = async (id) => {
     playWarning()
@@ -2268,7 +2302,6 @@ export default function AdminPanel() {
           nombre: normalizedFormData.nombre || '',
           apellidos: normalizedFormData.apellidos || '',
           correo: normalizedFormData.correo || '',
-          contraseña: normalizedFormData.contraseña,
           rol: normalizedFormData.rol || '',
           fincas: Array.isArray(normalizedFormData.fincas) ? normalizedFormData.fincas.map(Number).filter(Boolean) : [],
           cultivos: Array.isArray(normalizedFormData.cultivos) ? normalizedFormData.cultivos.map(Number).filter(Boolean) : [],
@@ -2295,7 +2328,7 @@ export default function AdminPanel() {
           }
 
           setUsers((prev) => [...prev, response.data])
-          successMessage = `Usuario "${response.data.nombre} ${response.data.apellidos}" agregado exitosamente`
+          successMessage = `Usuario "${response.data.nombre} ${response.data.apellidos}" agregado. Envíale un código de restablecimiento para que defina su contraseña.`
         }
         break
       }
@@ -3269,6 +3302,7 @@ export default function AdminPanel() {
       links: [
         { section: 'reportes', label: 'Reportes', icon: '📋' },
         { section: 'costos', label: 'Costos Generales', icon: '💰' },
+        { section: 'auditoria', label: 'Auditoría', icon: '🧾' },
       ],
     },
     {
@@ -3767,12 +3801,11 @@ export default function AdminPanel() {
               <table className="data-table">
                 <thead>
                   <tr className="table-title-row">
-                    <th colSpan={5}>Usuarios Registrados</th>
+                    <th colSpan={4}>Usuarios Registrados</th>
                   </tr>
                   <tr>
                     <th>Nombre</th>
                     <th>Email</th>
-                    <th>Contraseña</th>
                     <th>Rol</th>
                     <th>Acciones</th>
                   </tr>
@@ -3794,12 +3827,22 @@ export default function AdminPanel() {
                       >
                         <td data-field="nombre">{`${usuario.nombre} ${usuario.apellidos || ''}`.trim()}</td>
                         <td data-field="email">{usuario.email}</td>
-                        <td data-field="password">{usuario.password}</td>
                         <td data-field="rol">{usuario.rol}</td>
                         <td data-field="acciones">
                           <div className="action-buttons">
                             {usuariosEstado === 'ACTIVO' ? (
                               <>
+                                <button
+                                  type="button"
+                                  className="btn-icon"
+                                  title="Enviar código de restablecimiento"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleRequestUserPasswordReset(usuario)
+                                  }}
+                                >
+                                  {'\uD83D\uDD11'}
+                                </button>
                                 <button
                                   type="button"
                                   className="btn-icon btn-edit"
@@ -3857,7 +3900,7 @@ export default function AdminPanel() {
                   })}
                   {filteredUsers.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="no-results-row">
+                      <td colSpan={4} className="no-results-row">
                         No se encontraron registros asociados.
                       </td>
                     </tr>
@@ -4751,6 +4794,10 @@ export default function AdminPanel() {
             </div>
           </section>
 
+          <section id="auditoria-section" className={`content-section ${activeSection === 'auditoria' ? 'active' : ''}`}>
+            {activeSection === 'auditoria' && <AdminAudit />}
+          </section>
+
           {/* Sección de costos generales: lista de costos y detalle de inventario. */}
           <section id="costos-section" className={`content-section ${activeSection === 'costos' ? 'active' : ''}`}>
             <div className="search-filter-wrapper">
@@ -5004,6 +5051,7 @@ export default function AdminPanel() {
                   <span className="slider"></span>
                 </label>
               </div>
+              {activeSection === 'configuracion' && <CatalogManagement />}
             </div>
           </section>
 
