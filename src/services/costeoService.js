@@ -53,6 +53,9 @@ export const saveSubcategoryConfig = (id, codigoContable, incluirCostoUnitario) 
 export const fetchInventoryProducts = (fincaId) =>
   requestData(httpClient.get(`/api/costeo/inventario/productos/${fincaId}`));
 
+export const fetchAvailableKardexOutputs = (fincaId, cultivoId) =>
+  requestData(httpClient.get(`/api/costeo/inventario/salidas-disponibles/${fincaId}/${cultivoId}`));
+
 export const registerInventoryConsumption = (payload) =>
   requestData(httpClient.post('/api/costeo/inventario/consumos', payload));
 

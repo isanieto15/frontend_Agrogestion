@@ -5,7 +5,7 @@ import * as Agro from '../services/agroData'
 import { clearTokens } from '../services/authSession'
 import { logoutUser } from '../services/authApi'
 import useAuthSession from '../hooks/useAuthSession'
-import { getInventarioElementos } from '../utils/inventarioElementos'
+import { formatMateriaPrimaDetalles, totalMateriaPrimaDetalles } from '../utils/materiaPrimaDetalles'
 import { MODAL_TYPES } from '../utils/modalConfig'
 import { DynamicModal } from '../components/DynamicModal'
 import ReasonModal from '../components/ReasonModal'
@@ -270,6 +270,7 @@ export default function WorkerPanel() {
 
   const [elementosOpen, setElementosOpen] = useState(false)
   const [elementosRows, setElementosRows] = useState([])
+  const [elementosTotal, setElementosTotal] = useState(0)
   const [usuarioFincas, setUsuarioFincas] = useState([])
   const [isLoadingFincas, setIsLoadingFincas] = useState(false)
 
@@ -1500,8 +1501,9 @@ export default function WorkerPanel() {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const openInventario = (descripcion) => {
-    setElementosRows(getInventarioElementos(descripcion, 'cultivo'))
+  const openInventario = (costo) => {
+    setElementosRows(formatMateriaPrimaDetalles(costo.materiaPrimaDetalles))
+    setElementosTotal(totalMateriaPrimaDetalles(costo.materiaPrimaDetalles))
     setElementosOpen(true)
     setTimeout(() => document.getElementById('elementos-inventario-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
   }
@@ -2040,7 +2042,7 @@ export default function WorkerPanel() {
                                 onClick={(e) => {
                                   if (costo.categoria !== 'Materia Prima') return
                                   if (e.target.closest('.action-buttons')) return
-                                  openInventario(costo.descripcion)
+                                  openInventario(costo)
                                 }}
                               >
                                 <td data-field="fecha">{formatDateDisplay(costo.fecha)}</td>
@@ -2099,31 +2101,38 @@ export default function WorkerPanel() {
                     <table className="data-table">
                       <thead>
                         <tr className="table-title-row">
-                          <th colSpan={5} style={{ backgroundColor: 'var(--bg-header)' }}>
-                            Elementos usados del inventario
+                          <th colSpan={6} style={{ backgroundColor: 'var(--bg-header)' }}>
+                            Detalle de Materia Prima
                           </th>
                         </tr>
                         <tr style={{ backgroundColor: 'var(--bg-header)' }}>
                           <th>Producto</th>
-                          <th>Precio Producto</th>
-                          <th>Cantidad Usada</th>
-                          <th>Medida Usada</th>
-                          <th>Costo Total</th>
+                          <th>Referencia Kardex</th>
+                          <th>Cantidad</th>
+                          <th>Unidad</th>
+                          <th>Costo unitario</th>
+                          <th>Subtotal</th>
                         </tr>
                       </thead>
                       <tbody id="elementos-inventario-tbody">
-                        {elementosRows.map((el, idx) => (
+                        {elementosRows.length ? elementosRows.map((el, idx) => (
                           <tr key={idx} className="data-item">
                             <td data-field="producto">{el.producto}</td>
-                            <td data-field="precio">{el.precioFmt}</td>
+                            <td data-field="referencia">{el.referencia}</td>
                             <td data-field="cantidad">{el.cantidad}</td>
-                            <td data-field="medida">{el.medida}</td>
-                            <td data-field="total">{el.totalFmt}</td>
+                            <td data-field="unidad">{el.unidad}</td>
+                            <td data-field="costo-unitario">{el.costoUnitarioFmt}</td>
+                            <td data-field="subtotal">{el.subtotalFmt}</td>
                           </tr>
-                        ))}
+                        )) : (
+                          <tr><td colSpan={6}>No hay detalles de Kardex registrados para este costo.</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
+                  {elementosRows.length > 0 ? (
+                    <p><strong>Total de Materia Prima: {Agro.formatCOP(elementosTotal)}</strong></p>
+                  ) : null}
                 </div>
               </>
             ) : null}

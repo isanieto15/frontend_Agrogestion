@@ -6,7 +6,7 @@ import useAuthSession from '../hooks/useAuthSession'
 import useSounds from '../hooks/useSounds'
 import { logoutUser, fetchUsers, createUser, updateUser, deleteUser, changeUserState } from '../services/authApi'
 import { fetchCultivosEnProceso } from '../services/asignaciones-usuarioAPI'
-import { getInventarioElementos } from '../utils/inventarioElementos'
+import { formatMateriaPrimaDetalles, totalMateriaPrimaDetalles } from '../utils/materiaPrimaDetalles'
 import Header from '../components/Header'
 import Sidebar from '../components/Sidebar'
 import DynamicModal from '../components/DynamicModal'
@@ -299,6 +299,72 @@ const COSTOS_GENERALES_ROWS = [
   },
 ]
 
+function DetailTableModal({ isOpen, title, titleId, columns, rows, emptyMessage, total, onClose }) {
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
+
+  if (!isOpen) return null
+
+  return (
+    <div
+      className="detail-modal-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <section className="detail-modal-content" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className="detail-modal-header">
+          <h2 id={titleId}>{title}</h2>
+          <button type="button" className="detail-modal-close" onClick={onClose} aria-label="Cerrar">
+            ×
+          </button>
+        </div>
+        <div className="detail-modal-body">
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  {columns.map((column) => <th key={column.key}>{column.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length > 0 ? (
+                  rows.map((row, rowIndex) => (
+                    <tr key={row.id ?? rowIndex} className="data-item">
+                      {columns.map((column) => (
+                        <td key={column.key} data-field={column.key}>
+                          {row[column.key] ?? '--'}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={columns.length} style={{ textAlign: 'center', padding: '20px' }}>
+                      {emptyMessage}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {rows.length > 0 && Number.isFinite(total) ? (
+            <p><strong>Total de Materia Prima: {Agro.formatCOP(total)}</strong></p>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 export default function AdminPanel() {
   // Hook para cambiar de ruta cuando el usuario no tiene permiso o cierra sesión.
   const navigate = useNavigate()
@@ -336,9 +402,9 @@ export default function AdminPanel() {
   // Controla si se muestran las asignaciones de usuario.
   const [asignacionesOpen, setAsignacionesOpen] = useState(false)
   // Estado para mostrar información detallada de inventario en costos de cultivo.
-  const [elementosCultivo, setElementosCultivo] = useState({ open: false, rows: [] })
+  const [elementosCultivo, setElementosCultivo] = useState({ open: false, rows: [], total: 0 })
   // Estado para mostrar información detallada de inventario en costos generales.
-  const [elementosGenerales, setElementosGenerales] = useState({ open: false, rows: [] })
+  const [elementosGenerales, setElementosGenerales] = useState({ open: false, rows: [], total: 0 })
   // Controla si el panel de reportes está visible.
   const [reportVisible, setReportVisible] = useState(false)
   // Tipo de reporte seleccionado para generar contenido.
@@ -1382,6 +1448,80 @@ export default function AdminPanel() {
         } finally {
           setReasonModal((r) => ({ ...r, isOpen: false }))
         }
+      },
+      cancelCallback: () => setReasonModal((r) => ({ ...r, isOpen: false })),
+    })
+  }
+
+  const handleResumeRecord = async ({ id, tipo, updateState, refresh }) => {
+    if (id == null) {
+      showNotification(`No se puede reanudar ${tipo.toLowerCase()}: ID inválido`, 'error')
+      playError()
+      return
+    }
+
+    playWarning()
+    const confirmed = await Swal.fire({
+      title: `Reanudar ${tipo}`,
+      text: 'El registro volverá a estar activo. ¿Desea continuar?',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, reanudar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#27ae60',
+      cancelButtonColor: '#ffffff',
+      customClass: {
+        cancelButton: 'custom-cancel-btn',
+        confirmButton: 'custom-confirm-btn',
+      },
+    })
+
+    if (!confirmed.isConfirmed) return
+
+    setReasonModal({
+      isOpen: true,
+      title: `Reanudar ${tipo}`,
+      question: `Indica el motivo por el cual se reanuda ${tipo.toLowerCase()}`,
+      callback: async (motivo) => {
+        let response
+        try {
+          response = await updateState(id, 'ACTIVO', motivo)
+        } catch (error) {
+          console.error(`Error al reanudar ${tipo.toLowerCase()}:`, error)
+          showNotification(
+            error?.response?.data?.message ||
+              error?.response?.data?.error ||
+              error?.message ||
+              `Error al reanudar ${tipo.toLowerCase()}`,
+            'error'
+          )
+          playError()
+          setReasonModal((r) => ({ ...r, isOpen: false }))
+          return
+        }
+
+        if (!response || response.success === false) {
+          showNotification(
+            response?.message || response?.error || `No se pudo reanudar ${tipo.toLowerCase()}`,
+            'error'
+          )
+          playError()
+          setReasonModal((r) => ({ ...r, isOpen: false }))
+          return
+        }
+
+        try {
+          await refresh?.()
+        } catch (error) {
+          console.error(`Error actualizando la lista después de reanudar ${tipo.toLowerCase()}:`, error)
+          showNotification(`${tipo} reanudado, pero no se pudo actualizar la lista`, 'warning')
+          playError()
+          setReasonModal((r) => ({ ...r, isOpen: false }))
+          return
+        }
+
+        showNotification(`${tipo} reanudado correctamente`, 'success')
+        setReasonModal((r) => ({ ...r, isOpen: false }))
       },
       cancelCallback: () => setReasonModal((r) => ({ ...r, isOpen: false })),
     })
@@ -2900,7 +3040,7 @@ export default function AdminPanel() {
     if (etapasFiltradas.length === 0) {
       return (
         <tr className="data-item">
-          <td colSpan={etapasEstado === 'ACTIVO' && isSelectedCultivoActivo ? 6 : 5} style={{ textAlign: 'center' }}>
+          <td colSpan={etapasEstado === 'ANULADO' || (etapasEstado === 'ACTIVO' && isSelectedCultivoActivo) ? 6 : 5} style={{ textAlign: 'center' }}>
             No se encontraron registros asociados.
           </td>
         </tr>
@@ -2923,11 +3063,30 @@ export default function AdminPanel() {
               {etapa.estado.replace('-', ' ')}
             </span>
           </td>
-          {etapasEstado === 'ACTIVO' && isSelectedCultivoActivo && (
+          {(etapasEstado === 'ANULADO' || (etapasEstado === 'ACTIVO' && isSelectedCultivoActivo)) && (
             <td data-field="acciones">
               <div className="action-buttons">
-                <button type="button" className="btn-icon btn-edit" title="Editar" onClick={() => handleOpenEditEtapa(etapa)}>{'\u270F\uFE0F'}</button>
-                <button type="button" className="btn-icon btn-delete" title="Anular" onClick={() => handleDeleteEtapa(etapa)}>{'\uD83D\uDEAB'}</button>
+                {etapasEstado === 'ACTIVO' ? (
+                  <>
+                    <button type="button" className="btn-icon btn-edit" title="Editar" onClick={() => handleOpenEditEtapa(etapa)}>{'\u270F\uFE0F'}</button>
+                    <button type="button" className="btn-icon btn-delete" title="Anular" onClick={() => handleDeleteEtapa(etapa)}>{'\uD83D\uDEAB'}</button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-reactivate"
+                    onClick={() =>
+                      handleResumeRecord({
+                        id: etapa.id ?? etapa.idetapacultivo ?? etapa.idetapa_cultivo ?? etapa.idEtapaCultivo,
+                        tipo: 'Etapa',
+                        updateState: changeEtapaState,
+                        refresh: refreshCultivoDetalleData,
+                      })
+                    }
+                  >
+                    Reanudar
+                  </button>
+                )}
               </div>
             </td>
           )}
@@ -3435,6 +3594,16 @@ export default function AdminPanel() {
               fincaId={fincaId}
               filterOptions={filterOptions}
               onNotify={showNotification}
+              onSaved={async (cultivoId) => {
+                const [fincaCosts, cropCosts] = await Promise.all([
+                  fetchCostosPorFinca(Number(fincaId)),
+                  fetchCultivoDetalle(cultivoId),
+                ])
+                setCostosGenerales(Array.isArray(fincaCosts) ? fincaCosts : [])
+                if (Number(selectedCultivoId) === Number(cultivoId)) {
+                  setDetalleCostos(Array.isArray(cropCosts) ? cropCosts : [])
+                }
+              }}
             />
           </section>
 
@@ -3474,7 +3643,7 @@ export default function AdminPanel() {
                     <th>Nombre</th>
                     <th>Ubicación</th>
                     <th>Cultivos activos</th>
-                    {fincasEstado === 'ACTIVO' && <th>Acciones</th>}
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3513,28 +3682,49 @@ export default function AdminPanel() {
                           <td data-field="nombre">{finca.nombre}</td>
                           <td data-field="ubicacion">{finca.ubicacion || '--'}</td>
                           <td data-field="cultivos">{cultivosActivos}</td>
-                          {fincasEstado === 'ACTIVO' && (
-                            <td data-field="acciones" onClick={(e) => e.stopPropagation()}>
-                              <div className="action-buttons">
+                          <td data-field="acciones" onClick={(e) => e.stopPropagation()}>
+                            <div className="action-buttons">
+                              {fincasEstado === 'ACTIVO' ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn-icon btn-edit"
+                                    title="Editar"
+                                    onClick={() => handleOpenFincaModal(finca)}
+                                  >
+                                    {'\u270F\uFE0F'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-icon btn-delete"
+                                    title="Archivar"
+                                    onClick={() => handleDeleteFinca(finca.id)}
+                                  >
+                                    {'\uD83D\uDCC2'}
+                                  </button>
+                                </>
+                              ) : (
                                 <button
                                   type="button"
-                                  className="btn-icon btn-edit"
-                                  title="Editar"
-                                  onClick={() => handleOpenFincaModal(finca)}
+                                  className="btn-reactivate"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleResumeRecord({
+                                      id: finca.id,
+                                      tipo: 'Finca',
+                                      updateState: changeFincaState,
+                                      refresh: async () => {
+                                        await fetchFincasSelectorOptions()
+                                        setFincasRefresh((prev) => prev + 1)
+                                      },
+                                    })
+                                  }}
                                 >
-                                  {'\u270F\uFE0F'}
+                                  Reanudar
                                 </button>
-                                <button
-                                  type="button"
-                                  className="btn-icon btn-delete"
-                                  title="Archivar"
-                                  onClick={() => handleDeleteFinca(finca.id)}
-                                >
-                                  {'\uD83D\uDCC2'}
-                                </button>
-                              </div>
-                            </td>
-                          )}
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       )
                     })
@@ -3584,7 +3774,7 @@ export default function AdminPanel() {
                     <th>Email</th>
                     <th>Contraseña</th>
                     <th>Rol</th>
-                    {usuariosEstado === 'ACTIVO' && <th>Acciones</th>}
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3600,41 +3790,68 @@ export default function AdminPanel() {
                           if (e.target.closest('.action-buttons')) return
                           setActiveUsuarioId(usuario.id)
                           setAsignacionesOpen(true)
-                          setTimeout(() => document.getElementById('asignaciones-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
                         }}
                       >
                         <td data-field="nombre">{`${usuario.nombre} ${usuario.apellidos || ''}`.trim()}</td>
                         <td data-field="email">{usuario.email}</td>
                         <td data-field="password">{usuario.password}</td>
                         <td data-field="rol">{usuario.rol}</td>
-                        {usuariosEstado === 'ACTIVO' && (
-                          <td data-field="acciones">
-                            <div className="action-buttons">
+                        <td data-field="acciones">
+                          <div className="action-buttons">
+                            {usuariosEstado === 'ACTIVO' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn-icon btn-edit"
+                                  title="Editar"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleOpenEditUser(usuario)
+                                  }}
+                                >
+                                  {'\u270F\uFE0F'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-icon btn-delete"
+                                  title="Desactivar"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteUser(usuario.id)
+                                  }}
+                                >
+                                  {'\uD83D\uDD12'}
+                                </button>
+                              </>
+                            ) : (
                               <button
                                 type="button"
-                                className="btn-icon btn-edit"
-                                title="Editar"
+                                className="btn-reactivate"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  handleOpenEditUser(usuario)
+                                  handleResumeRecord({
+                                    id: usuario.id,
+                                    tipo: 'Usuario',
+                                    updateState: changeUserState,
+                                    refresh: async () => {
+                                      const response = await fetchUsers(usuariosEstado)
+                                      if (!response.success) {
+                                        throw new Error(response.message || 'No se pudo actualizar la lista de usuarios')
+                                      }
+                                      setUsers(response.data.map((user) => ({
+                                        ...user,
+                                        fincas: Array.isArray(user.fincas) ? user.fincas.map(Number).filter(Boolean) : [],
+                                        cultivos: Array.isArray(user.cultivos) ? user.cultivos.map(Number).filter(Boolean) : [],
+                                      })))
+                                    },
+                                  })
                                 }}
                               >
-                                {'\u270F\uFE0F'}
+                                Reanudar
                               </button>
-                              <button
-                                type="button"
-                                className="btn-icon btn-delete"
-                                title="Desactivar"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleDeleteUser(usuario.id)
-                                }}
-                              >
-                                {'\uD83D\uDD12'}
-                              </button>
-                            </div>
-                          </td>
-                        )}
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     )
                   })}
@@ -3649,56 +3866,6 @@ export default function AdminPanel() {
               </table>
             </div>
 
-            <div className="info-section" id="asignaciones-section" style={{ display: asignacionesOpen ? 'block' : 'none', marginTop: 40 }}>
-              <div className="section-info-header">
-                <h3>
-                  Asignaciones de{' '}
-                  <span id="usuario-nombre-asignaciones">
-                    {users.find((u) => u.id === activeUsuarioId)?.nombre || '--'}
-                  </span>
-                </h3>
-                <button
-                  type="button"
-                  className="btn-close-asignaciones"
-                  id="btn-close-asignaciones"
-                  onClick={() => {
-                    setAsignacionesOpen(false)
-                    setActiveUsuarioId(null)
-                  }}
-                >
-                  ✕ Cerrar
-                </button>
-              </div>
-              <div className="table-container">
-                <table className="data-table">
-                  <thead>
-                    <tr className="table-title-row">
-                      <th colSpan={2}>Asignaciones</th>
-                    </tr>
-                    <tr>
-                      <th>Fincas Asignadas</th>
-                      <th>Cultivos Asignados</th>
-                    </tr>
-                  </thead>
-                  <tbody id="asignaciones-tbody">
-                    {activeUsuarioAssignments.length > 0 ? (
-                      activeUsuarioAssignments.map((a, i) => (
-                        <tr key={i} className="data-item">
-                          <td data-field="finca">{a.finca}</td>
-                          <td data-field="cultivos">{a.cultivos}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr className="data-item">
-                        <td colSpan={2} style={{ textAlign: 'center', color: '#666' }}>
-                          No hay asignaciones registradas para este trabajador.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </section>
 
           {/* Sección de cultivos: lista por finca y acceso a detalles individuales. */}
@@ -3758,7 +3925,7 @@ export default function AdminPanel() {
                     <th>Fecha Final</th>
                     <th>Etapa Actual</th>
                     <th>Estado</th>
-                    {cultivosEstado === 'ACTIVO' && <th>Acciones</th>}
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3792,31 +3959,55 @@ export default function AdminPanel() {
                             })()
                           }
                         </td>
-                        {cultivosEstado === 'ACTIVO' && (
-                          <td data-field="acciones">
-                            <div className="action-buttons">
+                        <td data-field="acciones">
+                          <div className="action-buttons">
+                            {cultivosEstado === 'ACTIVO' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn-icon btn-edit"
+                                  title="Editar"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleOpenEditCultivo(c)
+                                  }}
+                                >
+                                  {'\u270F\uFE0F'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-icon btn-delete"
+                                  title="Archivar"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteCultivo(c.id)
+                                  }}
+                                >
+                                  {'\uD83D\uDCC2'}
+                                </button>
+                              </>
+                            ) : (
                               <button
                                 type="button"
-                                className="btn-icon btn-edit"
-                                title="Editar"
+                                className="btn-reactivate"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  handleOpenEditCultivo(c)
+                                  handleResumeRecord({
+                                    id: c.id,
+                                    tipo: 'Cultivo',
+                                    updateState: changeCultivoState,
+                                    refresh: async () => {
+                                      await fetchCultivosData(fincaId)
+                                      setFincasRefresh((prev) => prev + 1)
+                                    },
+                                  })
                                 }}
                               >
-                                {'\u270F\uFE0F'}
+                                Reanudar
                               </button>
-                              <button type="button" className="btn-icon btn-delete" title="Archivar"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleDeleteCultivo(c.id)
-                                }}
-                              >
-                                {'\uD83D\uDCC2'}
-                              </button>
-                            </div>
-                          </td>
-                        )}
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))
                   ) : (
@@ -3915,7 +4106,7 @@ export default function AdminPanel() {
                     <table className="data-table">
                       <thead>
                         <tr className="table-title-row">
-                          <th colSpan={etapasEstado === 'ACTIVO' && isSelectedCultivoActivo ? 6 : 5}>Etapas Registradas</th>
+                          <th colSpan={etapasEstado === 'ANULADO' || (etapasEstado === 'ACTIVO' && isSelectedCultivoActivo) ? 6 : 5}>Etapas Registradas</th>
                         </tr>
                         <tr>
                           <th>Nombre</th>
@@ -3923,7 +4114,7 @@ export default function AdminPanel() {
                           <th>Fecha Inicio</th>
                           <th>Fecha Final</th>
                           <th>Estado</th>
-                          {etapasEstado === 'ACTIVO' && isSelectedCultivoActivo && <th>Acciones</th>}
+                          {(etapasEstado === 'ANULADO' || (etapasEstado === 'ACTIVO' && isSelectedCultivoActivo)) && <th>Acciones</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -3973,7 +4164,7 @@ export default function AdminPanel() {
                     <table className="data-table">
                       <thead>
                         <tr className="table-title-row">
-                          <th colSpan={detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo ? 6 : 5}>Cosechas Realizadas</th>
+                          <th colSpan={detalleCosechasEstado === 'ANULADO' || (detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo) ? 6 : 5}>Cosechas Realizadas</th>
                         </tr>
                         <tr>
                           <th>Fecha</th>
@@ -3981,19 +4172,19 @@ export default function AdminPanel() {
                           <th>Unidad Medida</th>
                           <th>Precio</th>
                           <th>Tipo Precio</th>
-                          {detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo && <th>Acciones</th>}
+                          {(detalleCosechasEstado === 'ANULADO' || (detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo)) && <th>Acciones</th>}
                         </tr>
                       </thead>
                       <tbody>
                         {isLoadingDetalleCosechas ? (
                           <tr className="data-item">
-                            <td colSpan={detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo ? 6 : 5} style={{ textAlign: 'center' }}>
+                            <td colSpan={detalleCosechasEstado === 'ANULADO' || (detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo) ? 6 : 5} style={{ textAlign: 'center' }}>
                               Cargando cosechas...
                             </td>
                           </tr>
                         ) : filteredCosechas.length === 0 ? (
                           <tr className="data-item">
-                            <td colSpan={detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo ? 6 : 5} style={{ textAlign: 'center' }}>
+                            <td colSpan={detalleCosechasEstado === 'ANULADO' || (detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo) ? 6 : 5} style={{ textAlign: 'center' }}>
                               No se encontraron registros asociados.
                             </td>
                           </tr>
@@ -4005,15 +4196,37 @@ export default function AdminPanel() {
                               <td data-field="unidad">{cosecha.unidad || cosecha.unidad_medida || cosecha.unidad?.nombre || cosecha.unidadMedida}</td>
                               <td data-field="precio">{formatPrecioValue(cosecha.precio || cosecha.precio_unitario)}</td>
                               <td data-field="tipo-precio">{cosecha.tipoPrecio || cosecha.tipoprecio || cosecha.tipoPrecio?.nombre || cosecha.tipo_precio || cosecha.tipoPrecioId || cosecha.tipoprecioid || ''}</td>
-                              {detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo && (
+                              {(detalleCosechasEstado === 'ANULADO' || (detalleCosechasEstado === 'ACTIVO' && isSelectedCultivoActivo)) && (
                                 <td data-field="acciones">
                                   <div className="action-buttons">
-                                    <button type="button" className="btn-icon btn-edit" title="Editar" onClick={() => handleOpenEditCosecha(cosecha)}>
-                                      {'\u270F\uFE0F'}
-                                    </button>
-                                    <button type="button" className="btn-icon btn-delete" title="Anular" onClick={() => handleDeleteCosecha(cosecha)}>
-                                      {'\uD83D\uDEAB'}
-                                    </button>
+                                    {detalleCosechasEstado === 'ACTIVO' ? (
+                                      <>
+                                        <button type="button" className="btn-icon btn-edit" title="Editar" onClick={() => handleOpenEditCosecha(cosecha)}>
+                                          {'\u270F\uFE0F'}
+                                        </button>
+                                        <button type="button" className="btn-icon btn-delete" title="Anular" onClick={() => handleDeleteCosecha(cosecha)}>
+                                          {'\uD83D\uDEAB'}
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="btn-reactivate"
+                                        onClick={() =>
+                                          handleResumeRecord({
+                                            id: cosecha.id,
+                                            tipo: 'Cosecha',
+                                            updateState: changeCosechaState,
+                                            refresh: async () => {
+                                              await refreshCultivoDetalleData()
+                                              setFincasRefresh((prev) => prev + 1)
+                                            },
+                                          })
+                                        }
+                                      >
+                                        Reanudar
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
                               )}
@@ -4119,7 +4332,7 @@ export default function AdminPanel() {
                     <table className="data-table costos-table">
                       <thead>
                         <tr className="table-title-row">
-                          <th colSpan={detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo ? 9 : 8}>Costos Registrados del Cultivo</th>
+                          <th colSpan={detalleCostosEstado === 'ANULADO' || (detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo) ? 9 : 8}>Costos Registrados del Cultivo</th>
                         </tr>
                         <tr>
                           <th>Fecha</th>
@@ -4130,25 +4343,25 @@ export default function AdminPanel() {
                           <th>Info Adicional</th>
                           <th>Valor</th>
                           <th>Estado</th>
-                          {detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo && <th>Acciones</th>}
+                          {(detalleCostosEstado === 'ANULADO' || (detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo)) && <th>Acciones</th>}
                         </tr>
                       </thead>
                       <tbody>
                         {isLoadingDetalleCostos ? (
                           <tr>
-                            <td colSpan={detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo ? 9 : 8} style={{ textAlign: 'center', padding: '20px' }}>
+                            <td colSpan={detalleCostosEstado === 'ANULADO' || (detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo) ? 9 : 8} style={{ textAlign: 'center', padding: '20px' }}>
                               Cargando costos del cultivo...
                             </td>
                           </tr>
                         ) : detallesCostosOrdenados.length === 0 ? (
                           <tr>
-                            <td colSpan={detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo ? 9 : 8} style={{ textAlign: 'center', padding: '20px' }}>
+                            <td colSpan={detalleCostosEstado === 'ANULADO' || (detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo) ? 9 : 8} style={{ textAlign: 'center', padding: '20px' }}>
                               No se encontraron registros asociados.
                             </td>
                           </tr>
                         ) : visibleCostos.length === 0 ? (
                           <tr>
-                            <td colSpan={detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo ? 9 : 8} style={{ textAlign: 'center', padding: '20px' }}>
+                            <td colSpan={detalleCostosEstado === 'ANULADO' || (detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo) ? 9 : 8} style={{ textAlign: 'center', padding: '20px' }}>
                               No se encontraron costos con los filtros aplicados.
                             </td>
                           </tr>
@@ -4190,11 +4403,11 @@ export default function AdminPanel() {
                                 onClick={(e) => {
                                   if (!isMp) return
                                   if (e.target.closest('.action-buttons')) return
-                                  setElementosCultivo({ open: true, rows: getInventarioElementos(costo.descripcion, 'cultivo') })
-                                  setTimeout(
-                                    () => document.getElementById('elementos-inventario-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-                                    100,
-                                  )
+                                  setElementosCultivo({
+                                    open: true,
+                                    rows: formatMateriaPrimaDetalles(costo.materiaPrimaDetalles),
+                                    total: totalMateriaPrimaDetalles(costo.materiaPrimaDetalles),
+                                  })
                                 }}
                               >
                                 <td data-field="fecha">{formatDateValue(costo.fecha)}</td>
@@ -4259,31 +4472,58 @@ export default function AdminPanel() {
                                     {estadoLabel}
                                   </span>
                                 </td>
-                                {detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo && (
+                                {(detalleCostosEstado === 'ANULADO' || (detalleCostosEstado === 'ACTIVO' && isSelectedCultivoActivo)) && (
                                   <td data-field="acciones">
                                     <div className="action-buttons">
-                                      <button
-                                        type="button"
-                                        className="btn-icon btn-edit"
-                                        title="Editar"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          handleOpenEditCosto(costo)
-                                        }}
-                                      >
-                                        {'\u270F\uFE0F'}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn-icon btn-delete"
-                                        title="Anular"
-                                        onClick={async (e) => {
-                                          e.stopPropagation()
-                                          await handleDeleteCosto(costo)
-                                        }}
-                                      >
-                                        {'\uD83D\uDEAB'}
-                                      </button>
+                                      {detalleCostosEstado === 'ACTIVO' ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            className="btn-icon btn-edit"
+                                            title="Editar"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleOpenEditCosto(costo)
+                                            }}
+                                          >
+                                            {'\u270F\uFE0F'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn-icon btn-delete"
+                                            title="Anular"
+                                            onClick={async (e) => {
+                                              e.stopPropagation()
+                                              await handleDeleteCosto(costo)
+                                            }}
+                                          >
+                                            {'\uD83D\uDEAB'}
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          className="btn-reactivate"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleResumeRecord({
+                                              id: costo.id,
+                                              tipo: 'Costo',
+                                              updateState: changeCostoState,
+                                              refresh: async () => {
+                                                await refreshCultivoDetalleData()
+                                                setFincasRefresh((prev) => prev + 1)
+                                                if (activeSection === 'costos' && fincaId) {
+                                                  const data = await fetchCostosPorFinca(Number(fincaId))
+                                                  setCostosGenerales(Array.isArray(data) ? data : [])
+                                                }
+                                              },
+                                            })
+                                          }}
+                                        >
+                                          Reanudar
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 )}
@@ -4296,41 +4536,6 @@ export default function AdminPanel() {
                   </div>
                 </div>
 
-                <div className="info-section" id="elementos-inventario-section" style={{ display: elementosCultivo.open ? 'block' : 'none' }}>
-                  <div className="section-info-header">
-                    <h3>Información del Inventario </h3>
-                    <button type="button" className="btn-close-elements" id="btn-close-elements" onClick={() => setElementosCultivo({ open: false, rows: [] })}>
-                      ✕ Cerrar
-                    </button>
-                  </div>
-                  <div className="table-container">
-                    <table className="data-table">
-                      <thead>
-                        <tr className="table-title-row">
-                          <th colSpan={5}>Elementos usados del inventario</th>
-                        </tr>
-                        <tr>
-                          <th>Producto</th>
-                          <th>Precio Producto</th>
-                          <th>Cantidad Usada</th>
-                          <th>Medida Usada</th>
-                          <th>Costo Total</th>
-                        </tr>
-                      </thead>
-                      <tbody id="elementos-inventario-tbody">
-                        {elementosCultivo.rows.map((el, idx) => (
-                          <tr key={idx} className="data-item">
-                            <td data-field="producto">{el.producto}</td>
-                            <td data-field="precio">{el.precioFmt}</td>
-                            <td data-field="cantidad">{el.cantidad}</td>
-                            <td data-field="medida">{el.medida}</td>
-                            <td data-field="costo-total">{el.totalFmt}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
               </>
             ) : null}
           </section>
@@ -4669,7 +4874,7 @@ export default function AdminPanel() {
                     <th>Descripción</th>
                     <th>Valor</th>
                     <th>Estado de Pago</th>
-                    {costosGeneralesEstado === 'ACTIVO' && <th>Acciones</th>}
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4697,11 +4902,11 @@ export default function AdminPanel() {
                           onClick={(e) => {
                             if (!isMp) return
                             if (e.target.closest('.action-buttons')) return
-                            setElementosGenerales({ open: true, rows: getInventarioElementos(costo.descripcion, 'generales') })
-                            setTimeout(
-                              () => document.getElementById('elementos-inventario-generales-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-                              100,
-                            )
+                            setElementosGenerales({
+                              open: true,
+                              rows: formatMateriaPrimaDetalles(costo.materiaPrimaDetalles),
+                              total: totalMateriaPrimaDetalles(costo.materiaPrimaDetalles),
+                            })
                           }}
                         >
                           <td data-field="fecha">{formatDateValue(costo.fecha)}</td>
@@ -4720,24 +4925,49 @@ export default function AdminPanel() {
                           <td data-field="estado_pago">
                             <span className={estadoClass}>{costo.estado_pago || '--'}</span>
                           </td>
-                          {costosGeneralesEstado === 'ACTIVO' && (
-                            <td data-field="acciones">
-                              <div className="action-buttons">
-                                <button type="button" className="btn-icon btn-edit" title="Editar" onClick={(event) => {
-                                  event.stopPropagation()
-                                  handleOpenEditCosto(costo)
-                                }}>
-                                  {'\u270F\uFE0F'}
+                          <td data-field="acciones">
+                            <div className="action-buttons">
+                              {costosGeneralesEstado === 'ACTIVO' ? (
+                                <>
+                                  <button type="button" className="btn-icon btn-edit" title="Editar" onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleOpenEditCosto(costo)
+                                  }}>
+                                    {'\u270F\uFE0F'}
+                                  </button>
+                                  <button type="button" className="btn-icon btn-delete" title="Anular" onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleDeleteCosto(costo)
+                                  }}>
+                                    {'\uD83D\uDEAB'}
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn-reactivate"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleResumeRecord({
+                                      id: costo.id,
+                                      tipo: 'Costo',
+                                      updateState: changeCostoState,
+                                      refresh: async () => {
+                                        if (!fincaId) {
+                                          throw new Error('Selecciona una finca para actualizar los costos')
+                                        }
+                                        const data = await fetchCostosPorFinca(Number(fincaId))
+                                        setCostosGenerales(Array.isArray(data) ? data : [])
+                                        setFincasRefresh((prev) => prev + 1)
+                                      },
+                                    })
+                                  }}
+                                >
+                                  Reanudar
                                 </button>
-                                <button type="button" className="btn-icon btn-delete" title="Anular" onClick={(event) => {
-                                  event.stopPropagation()
-                                  handleDeleteCosto(costo)
-                                }}>
-                                  {'\uD83D\uDEAB'}
-                                </button>
-                              </div>
-                            </td>
-                          )}
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       )
                     })
@@ -4750,46 +4980,6 @@ export default function AdminPanel() {
                   )}
                 </tbody>
               </table>
-            </div>
-            <div className="info-section" id="elementos-inventario-generales-section" style={{ display: elementosGenerales.open ? 'block' : 'none' }}>
-              <div className="section-info-header">
-                <h3>Información del Inventario</h3>
-                <button
-                  type="button"
-                  className="btn-close-elements"
-                  id="btn-close-elements-generales"
-                  onClick={() => setElementosGenerales({ open: false, rows: [] })}
-                >
-                  ✕ Cerrar
-                </button>
-              </div>
-              <div className="table-container">
-                <table className="data-table">
-                  <thead>
-                    <tr className="table-title-row">
-                      <th colSpan={5}>Elementos usados del inventario</th>
-                    </tr>
-                    <tr>
-                      <th>Producto</th>
-                      <th>Precio Producto</th>
-                      <th>Cantidad Usada</th>
-                      <th>Medida Usada</th>
-                      <th>Costo Total</th>
-                    </tr>
-                  </thead>
-                  <tbody id="elementos-inventario-generales-tbody">
-                    {elementosGenerales.rows.map((el, idx) => (
-                      <tr key={idx} className="data-item">
-                        <td data-field="producto">{el.producto}</td>
-                        <td data-field="precio">{el.precioFmt}</td>
-                        <td data-field="cantidad">{el.cantidad}</td>
-                        <td data-field="medida">{el.medida}</td>
-                        <td data-field="costo-total">{el.totalFmt}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
           </section>
 
@@ -4894,6 +5084,55 @@ export default function AdminPanel() {
           </section>
         </div>
       </main>
+      <DetailTableModal
+        isOpen={asignacionesOpen}
+        title={`Asignaciones de ${[activeUsuario?.nombre, activeUsuario?.apellidos].filter(Boolean).join(' ') || '--'}`}
+        titleId="asignaciones-modal-title"
+        columns={[
+          { key: 'finca', label: 'Finca' },
+          { key: 'cultivos', label: 'Cultivos asignados' },
+        ]}
+        rows={activeUsuarioAssignments}
+        emptyMessage="No hay asignaciones registradas para este trabajador."
+        onClose={() => {
+          setAsignacionesOpen(false)
+          setActiveUsuarioId(null)
+        }}
+      />
+      <DetailTableModal
+        isOpen={elementosCultivo.open}
+        title="Información del Inventario"
+        titleId="inventario-cultivo-modal-title"
+        columns={[
+          { key: 'producto', label: 'Producto' },
+          { key: 'referencia', label: 'Referencia Kardex' },
+          { key: 'cantidad', label: 'Cantidad' },
+          { key: 'unidad', label: 'Unidad' },
+          { key: 'costoUnitarioFmt', label: 'Costo unitario' },
+          { key: 'subtotalFmt', label: 'Subtotal' },
+        ]}
+        rows={elementosCultivo.rows}
+        emptyMessage="No hay detalles de Kardex registrados para este costo."
+        total={elementosCultivo.total}
+        onClose={() => setElementosCultivo({ open: false, rows: [], total: 0 })}
+      />
+      <DetailTableModal
+        isOpen={elementosGenerales.open}
+        title="Información del Inventario"
+        titleId="inventario-general-modal-title"
+        columns={[
+          { key: 'producto', label: 'Producto' },
+          { key: 'referencia', label: 'Referencia Kardex' },
+          { key: 'cantidad', label: 'Cantidad' },
+          { key: 'unidad', label: 'Unidad' },
+          { key: 'costoUnitarioFmt', label: 'Costo unitario' },
+          { key: 'subtotalFmt', label: 'Subtotal' },
+        ]}
+        rows={elementosGenerales.rows}
+        emptyMessage="No hay detalles de Kardex registrados para este costo."
+        total={elementosGenerales.total}
+        onClose={() => setElementosGenerales({ open: false, rows: [], total: 0 })}
+      />
       <ReasonModal
         isOpen={reasonModal.isOpen}
         title={reasonModal.title}
