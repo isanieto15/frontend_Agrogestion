@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useCallback, useState, useEffect } from 'react'
 import { getModalConfig, validateForm, validateField, normalizeModalTextFields } from '../utils/modalConfig'
+import MateriaPrimaConsumptionFields from './MateriaPrimaConsumptionFields.jsx'
 
 /**
  * Componente de modal dinámico que cambia su contenido según el tipo
  */
-export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, submitButtonText, fieldOptions = {}, initialData = undefined, onFieldChange, isEditing = false }) {
+export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, submitButtonText, fieldOptions = {}, initialData = undefined, onFieldChange, isEditing = false, materiaPrimaContext = {} }) {
   const [formData, setFormData] = useState({})
   const [errors, setErrors] = useState({})
   const [focusedField, setFocusedField] = useState(null)
@@ -12,6 +13,13 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
   const [filterQueries, setFilterQueries] = useState({})
 
   const config = getModalConfig(modalType)
+  const selectedCategory = (fieldOptions.categoria || []).find(
+    (option) => String(option.value) === String(formData.categoria)
+  )
+  const isMateriaPrima = modalType === 'costo'
+    && String(selectedCategory?.label || '').trim().toLowerCase() === 'materia prima'
+  const hasMateriaPrimaContext = Boolean(materiaPrimaContext.fincaId && materiaPrimaContext.cultivoId)
+  const materiaPrimaUnavailable = isMateriaPrima && (isEditing || !hasMateriaPrimaContext)
 
   const parseCurrencyInput = (value) => {
     if (value == null) return NaN
@@ -83,6 +91,12 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
       if (name === 'departamento') {
         nextFormData.municipio = ''
       }
+      if (name === 'categoria') {
+        nextFormData.subcategoria = ''
+        nextFormData.valor = ''
+        nextFormData.detalles = []
+        nextFormData.detallesValid = false
+      }
 
       return nextFormData
     })
@@ -96,6 +110,16 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
       }))
     }
   }
+
+  const handleMateriaPrimaChange = useCallback((detalles, total, detallesValid) => {
+    setFormData((prev) => ({
+      ...prev,
+      detalles,
+      detallesValid,
+      valor: String(total),
+    }))
+    setErrors((prev) => ({ ...prev, detalles: '' }))
+  }, [])
 
   const handleCheckboxChange = (fieldName, optionValue, checked) => {
     setFormData((prev) => {
@@ -127,6 +151,16 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
 
     // Validar el formulario
     const validationErrors = validateForm(modalType, formData)
+    if (isMateriaPrima) {
+      delete validationErrors.valor
+      if (isEditing) {
+        validationErrors.detalles = 'Los costos de Materia Prima vinculados a inventario no se pueden editar.'
+      } else if (!hasMateriaPrimaContext) {
+        validationErrors.detalles = 'Materia Prima debe asociarse a un cultivo desde su sección de costos.'
+      } else if (formData.detallesValid !== true) {
+        validationErrors.detalles = 'Selecciona salidas de Kardex y cantidades válidas.'
+      }
+    }
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors)
       return
@@ -185,7 +219,7 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
           color: 'var(--text-dark)',
           borderRadius: '12px',
           padding: '40px',
-          maxWidth: '500px',
+          maxWidth: isMateriaPrima ? '800px' : '500px',
           width: '90%',
           boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)',
           maxHeight: '90vh',
@@ -204,12 +238,13 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
             fontFamily: "var(--font-titulo, 'Playfair Display')",
           }}
         >
-          {title || config.title}
+          {isMateriaPrima ? 'Registrar consumo de Materia Prima' : title || config.title}
         </h2>
 
         <form autoComplete="off" onSubmit={handleSubmit}>
           {config.fields
             .filter((field) => {
+              if (isMateriaPrima && field.name === 'valor') return false
               // hide fields meant only for editing when creating
               if (field.editOnly && !isEditing) return false
               // hide fields meant only for creating when editing
@@ -230,7 +265,58 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
                     {field.required && <span style={{ color: '#e74c3c' }}> *</span>}
                   </label>
 
-                  {field.type === 'multiselect-search' ? (
+                  {field.type === 'checkbox-group' ? (
+                    <div
+                      role="group"
+                      aria-label={field.label}
+                      style={{
+                        border: `2px solid ${errors[field.name] ? '#e74c3c' : '#e8e8e8'}`,
+                        borderRadius: '8px',
+                        padding: '10px',
+                        backgroundColor: 'var(--bg-white)',
+                      }}
+                    >
+                      {field.description && (
+                        <p style={{ margin: '0 0 8px', color: 'var(--text-light)', fontSize: '13px' }}>
+                          {field.description}
+                        </p>
+                      )}
+                      {(fieldOptions[field.name] || field.options || []).map((option) => {
+                        const selectedValues = Array.isArray(formData[field.name]) ? formData[field.name] : []
+                        const isChecked = selectedValues.includes(option.value)
+                        return (
+                          <label
+                            key={option.value}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              gap: '10px',
+                              marginBottom: '8px',
+                              padding: '10px',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              backgroundColor: isChecked ? 'var(--selected-surface)' : 'transparent',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => handleCheckboxChange(field.name, option.value, e.target.checked)}
+                              style={{ marginTop: '3px' }}
+                            />
+                            <span>
+                              <strong style={{ display: 'block', color: 'var(--text-dark)' }}>{option.label}</strong>
+                              {option.description && (
+                                <span style={{ display: 'block', marginTop: '3px', color: 'var(--text-light)', fontSize: '12px' }}>
+                                  {option.description}
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  ) : field.type === 'multiselect-search' ? (
                 <>
                   <input
                     className="dynamic-modal-input"
@@ -504,6 +590,24 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
             </div>
           ))}
 
+          {isMateriaPrima && (
+            materiaPrimaUnavailable ? (
+              <p role="alert" style={{ color: '#b42318' }}>
+                {isEditing
+                  ? 'Los costos de Materia Prima vinculados a inventario no se pueden editar.'
+                  : 'Materia Prima requiere un cultivo seleccionado. Regístrala desde la sección de costos del cultivo, no como costo general.'}
+              </p>
+            ) : (
+              <MateriaPrimaConsumptionFields
+                key={`${materiaPrimaContext.fincaId}-${materiaPrimaContext.cultivoId}`}
+                fincaId={materiaPrimaContext.fincaId}
+                cultivoId={materiaPrimaContext.cultivoId}
+                onChange={handleMateriaPrimaChange}
+                error={errors.detalles}
+              />
+            )
+          )}
+
           <div
             style={{
               display: 'flex',
@@ -540,6 +644,7 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
             <button
               type="submit"
               className="dynamic-modal-submit"
+              disabled={materiaPrimaUnavailable}
               style={{
                 padding: '10px 24px',
                 border: 'none',

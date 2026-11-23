@@ -5,9 +5,15 @@ import * as Agro from '../services/agroData'
 import { clearTokens } from '../services/authSession'
 import { logoutUser } from '../services/authApi'
 import useAuthSession from '../hooks/useAuthSession'
-import { formatMateriaPrimaDetalles, totalMateriaPrimaDetalles } from '../utils/materiaPrimaDetalles'
+import {
+  formatMateriaPrimaCOP,
+  formatMateriaPrimaDetalles,
+  totalMateriaPrimaDetalles,
+} from '../utils/materiaPrimaDetalles'
+import { registerInventoryConsumption } from '../services/costeoService.js'
 import { MODAL_TYPES } from '../utils/modalConfig'
 import { DynamicModal } from '../components/DynamicModal'
+import MateriaPrimaDetailsModal from '../components/MateriaPrimaDetailsModal.jsx'
 import ReasonModal from '../components/ReasonModal'
 import { StateFilterMenu } from '../components/StateFilters'
 import { fetchFincasPorUsuario, fetchCultivosPorUsuario } from '../services/asignaciones-usuarioAPI'
@@ -220,6 +226,7 @@ export default function WorkerPanel() {
     return section === 'inicio' ? 'Inicio - Mi panel' : SECTION_TITLES[section] || 'Inicio - Mi panel'
   })
   const [selectedCultivo, setSelectedCultivo] = useState(null)
+  const isSelectedCultivoFinalizado = String(selectedCultivo?.estado || '').trim().toLowerCase() === 'finalizado'
 
   const [filterCat, setFilterCat] = useState('todos')
   const [filterEtapa, setFilterEtapa] = useState('todos')
@@ -557,6 +564,10 @@ export default function WorkerPanel() {
       })
       return
     }
+    if (isSelectedCultivoFinalizado) {
+      showNotification('No se pueden agregar etapas a un cultivo finalizado', 'warning')
+      return
+    }
 
     try {
       const list = await fetchAllEtapasCatalog(selectedCultivo.idtipocultivo)
@@ -684,7 +695,7 @@ export default function WorkerPanel() {
         const estadosArr = Array.isArray(estadosResponse)
           ? estadosResponse
           : estadosResponse?.data || []
-        const estadoEnProceso = estadosArr.find((e) => e.nombre?.toLowerCase() === 'en proceso')
+        const estadoEnProceso = estadosArr.find((e) => e.nombre?.trim().toLowerCase() === 'en proceso')
         const willSetEnProceso = idestado === estadoEnProceso?.id && editingEtapa.idestado !== estadoEnProceso?.id
         if (willSetEnProceso) {
           const result = await Swal.fire({
@@ -818,6 +829,10 @@ export default function WorkerPanel() {
         confirmButtonText: 'Aceptar',
         confirmButtonColor: '#dc3545',
       })
+      return
+    }
+    if (isSelectedCultivoFinalizado) {
+      showNotification('No se pueden agregar cosechas a un cultivo finalizado', 'warning')
       return
     }
 
@@ -1028,6 +1043,10 @@ export default function WorkerPanel() {
       })
       return
     }
+    if (isSelectedCultivoFinalizado) {
+      showNotification('No se pueden agregar costos a un cultivo finalizado', 'warning')
+      return
+    }
 
     try {
       const validation = await validateCultivoForCost(selectedCultivo.id)
@@ -1134,6 +1153,52 @@ export default function WorkerPanel() {
       showNotification('Selecciona un cultivo primero', 'error')
       return
     }
+    const selectedCategory = (modalFieldOptions.categoria || []).find(
+      (category) => String(category.value) === String(formData.categoria)
+    )
+    const isMateriaPrima = String(selectedCategory?.label || '').trim().toLowerCase() === 'materia prima'
+    if (isMateriaPrima) {
+      if (formData.detallesValid !== true) {
+        showNotification('Selecciona salidas de Kardex y cantidades válidas', 'error')
+        return
+      }
+      if (!validFincaId || !formData.subcategoria || !formData.estado_pago) {
+        showNotification('Completa la subcategoría y el estado de pago del costo', 'error')
+        return
+      }
+      try {
+        setIsSavingCosto(true)
+        const result = await registerInventoryConsumption({
+          fincaId: Number(validFincaId),
+          cultivoId: Number(selectedCultivo.id),
+          subcategoriaId: Number(formData.subcategoria),
+          estadoPagoId: Number(formData.estado_pago),
+          detalles: formData.detalles.map((detail) => ({
+            idKardex: Number(detail.idKardex),
+            cantidad: Number(detail.cantidad),
+          })),
+          descripcion: formData.descripcion || null,
+        })
+        if (!result?.costoId) {
+          throw new Error('No se recibió la confirmación del costo de Materia Prima.')
+        }
+        showNotification('Costo de Materia Prima registrado y asociado a las salidas de inventario', 'success')
+        const detalle = await fetchCultivoDetalle(selectedCultivo.id)
+        const costs = Array.isArray(detalle)
+          ? detalle
+          : detalle?.costos || detalle?.detalle || detalle?.detalleCostos || []
+        setDetalleCostos(Array.isArray(costs) ? costs : [])
+        handleCloseModal()
+      } catch (error) {
+        console.error('Error registrando costo de Materia Prima:', error)
+        const message = error?.response?.data?.message || error?.message || 'Error registrando costo de Materia Prima'
+        showNotification(message, 'error')
+      } finally {
+        setIsSavingCosto(false)
+      }
+      return
+    }
+
     try {
       setIsSavingCosto(true)
       const res = await createCosto({
@@ -1505,7 +1570,6 @@ export default function WorkerPanel() {
     setElementosRows(formatMateriaPrimaDetalles(costo.materiaPrimaDetalles))
     setElementosTotal(totalMateriaPrimaDetalles(costo.materiaPrimaDetalles))
     setElementosOpen(true)
-    setTimeout(() => document.getElementById('elementos-inventario-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
   }
 
   const navItems = [
@@ -1768,13 +1832,24 @@ export default function WorkerPanel() {
                     )
                   })()}
                 </div>
+                {isSelectedCultivoFinalizado && (
+                  <div className="detalle-cultivo-readonly-note">
+                    <div className="readonly-note-icon">🔒</div>
+                    <div className="readonly-note-content">
+                      <strong>Este cultivo está finalizado.</strong>
+                      <p>No se pueden agregar registros nuevos. Las etapas que estaban en proceso se cerraron automáticamente.</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="info-section" id="etapas-section">
                   <div className="section-info-header">
                     <h3>Etapas</h3>
-                    <button type="button" className="btn-add btn-primary" onClick={openAddEtapaModal}>
-                      + Agregar Nueva Etapa
-                    </button>
+                    {!isSelectedCultivoFinalizado && (
+                      <button type="button" className="btn-add btn-primary" onClick={openAddEtapaModal}>
+                        + Agregar Nueva Etapa
+                      </button>
+                    )}
                   </div>
                   <div className="search-filter-wrapper">
                     <div className="search-wrapper">
@@ -1845,9 +1920,11 @@ export default function WorkerPanel() {
                 <div className="info-section" id="cosechas-section">
                   <div className="section-info-header">
                     <h3>Cosechas</h3>
-                    <button type="button" className="btn-add btn-primary" onClick={handleOpenAgregarCosecha}>
-                      + Agregar Nueva Cosecha
-                    </button>
+                    {!isSelectedCultivoFinalizado && (
+                      <button type="button" className="btn-add btn-primary" onClick={handleOpenAgregarCosecha}>
+                        + Agregar Nueva Cosecha
+                      </button>
+                    )}
                   </div>
                   <div className="search-filter-wrapper">
                     <div className="filter-wrapper">
@@ -1934,9 +2011,11 @@ export default function WorkerPanel() {
                 <div className="info-section" id="costos-cultivo-section">
                   <div className="section-info-header">
                     <h3>Costos del Cultivo</h3>
-                    <button type="button" className="btn-add btn-primary" onClick={handleOpenAddCosto}>
-                      + Agregar Nuevo Costo
-                    </button>
+                    {!isSelectedCultivoFinalizado && (
+                      <button type="button" className="btn-add btn-primary" onClick={handleOpenAddCosto}>
+                        + Agregar Nuevo Costo
+                      </button>
+                    )}
                   </div>
                   <div className="search-filter-wrapper">
                     <div className="filter-wrapper">
@@ -2033,15 +2112,25 @@ export default function WorkerPanel() {
                           </tr>
                         ) : (
                           filteredCostos.map((costo, i) => {
-                            const toastClass = costo.categoria === 'Materia Prima' ? 'clickeable-materia-prima' : ''
+                            const isMp = String(costo.categoria || '').trim().toLowerCase() === 'materia prima'
+                            const toastClass = isMp ? 'clickeable-materia-prima' : ''
                             return (
                               <tr
                                 key={i}
                                 className={`data-item ${toastClass}`}
-                                style={{ cursor: costo.categoria === 'Materia Prima' ? 'pointer' : undefined }}
+                                style={{ cursor: isMp ? 'pointer' : undefined }}
+                                title={isMp ? 'Haz clic para ver el detalle de productos y subtotales.' : undefined}
+                                tabIndex={isMp ? 0 : undefined}
+                                aria-label={isMp ? 'Ver detalle del consumo de Materia Prima' : undefined}
                                 onClick={(e) => {
-                                  if (costo.categoria !== 'Materia Prima') return
+                                  if (!isMp) return
                                   if (e.target.closest('.action-buttons')) return
+                                  openInventario(costo)
+                                }}
+                                onKeyDown={(event) => {
+                                  if (!isMp || (event.key !== 'Enter' && event.key !== ' ')) return
+                                  if (event.target.closest('.action-buttons')) return
+                                  event.preventDefault()
                                   openInventario(costo)
                                 }}
                               >
@@ -2062,8 +2151,15 @@ export default function WorkerPanel() {
                                     {costo.etapa || '--'}
                                   </span>
                                 </td>
-                                <td data-field="descripcion">{costo.descripcion || '--'}</td>
-                                <td data-field="valor">{formatMoneyDisplay(costo.valor)}</td>
+                                <td data-field="descripcion">
+                                  {costo.descripcion || '--'}
+                                  {isMp ? <small className="mp-cost-details-hint">Ver detalle del consumo</small> : null}
+                                </td>
+                                <td data-field="valor">
+                                  {isMp
+                                    ? (costo.valor == null ? '--' : formatMateriaPrimaCOP(costo.valor))
+                                    : formatMoneyDisplay(costo.valor)}
+                                </td>
                                 <td data-field="estado">
                                   <span className={`detalle-cultivo-badge-estado detalle-cultivo-badge-estado-${(costo.estado_pago || costo.estado || 'pendiente').toString().toLowerCase().replace(/\s+/g, '-')}`}>
                                     {(costo.estado_pago || costo.estado || 'Pendiente').toString().replace(/-/g, ' ')}
@@ -2090,50 +2186,12 @@ export default function WorkerPanel() {
                   </div>
                 </div>
 
-                <div id="elementos-inventario-section" className="info-section" style={{ display: elementosOpen ? 'block' : 'none' }}>
-                  <div className="section-info-header">
-                    <h3>Información del Inventario </h3>
-                    <button type="button" className="btn-close-elements" id="btn-close-elementos" onClick={() => setElementosOpen(false)}>
-                      ✕ Cerrar
-                    </button>
-                  </div>
-                  <div className="table-container">
-                    <table className="data-table">
-                      <thead>
-                        <tr className="table-title-row">
-                          <th colSpan={6} style={{ backgroundColor: 'var(--bg-header)' }}>
-                            Detalle de Materia Prima
-                          </th>
-                        </tr>
-                        <tr style={{ backgroundColor: 'var(--bg-header)' }}>
-                          <th>Producto</th>
-                          <th>Referencia Kardex</th>
-                          <th>Cantidad</th>
-                          <th>Unidad</th>
-                          <th>Costo unitario</th>
-                          <th>Subtotal</th>
-                        </tr>
-                      </thead>
-                      <tbody id="elementos-inventario-tbody">
-                        {elementosRows.length ? elementosRows.map((el, idx) => (
-                          <tr key={idx} className="data-item">
-                            <td data-field="producto">{el.producto}</td>
-                            <td data-field="referencia">{el.referencia}</td>
-                            <td data-field="cantidad">{el.cantidad}</td>
-                            <td data-field="unidad">{el.unidad}</td>
-                            <td data-field="costo-unitario">{el.costoUnitarioFmt}</td>
-                            <td data-field="subtotal">{el.subtotalFmt}</td>
-                          </tr>
-                        )) : (
-                          <tr><td colSpan={6}>No hay detalles de Kardex registrados para este costo.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  {elementosRows.length > 0 ? (
-                    <p><strong>Total de Materia Prima: {Agro.formatCOP(elementosTotal)}</strong></p>
-                  ) : null}
-                </div>
+                <MateriaPrimaDetailsModal
+                  isOpen={elementosOpen}
+                  rows={elementosRows}
+                  total={elementosTotal}
+                  onClose={() => setElementosOpen(false)}
+                />
               </>
             ) : null}
           </section>
@@ -2147,6 +2205,10 @@ export default function WorkerPanel() {
           fieldOptions={modalFieldOptions}
           initialData={modalInitialData}
           isEditing={isEditingModal}
+          materiaPrimaContext={{
+            fincaId: selectedCultivo?.idfinca || validFincaId,
+            cultivoId: selectedCultivo?.id,
+          }}
         />
         <ReasonModal
           isOpen={reasonModal.isOpen}

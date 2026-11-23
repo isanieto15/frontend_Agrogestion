@@ -6,7 +6,12 @@ import useAuthSession from '../hooks/useAuthSession'
 import useSounds from '../hooks/useSounds'
 import { logoutUser, fetchUsers, createUser, updateUser, deleteUser, changeUserState, requestUserPasswordReset } from '../services/authApi'
 import { fetchCultivosEnProceso } from '../services/asignaciones-usuarioAPI'
-import { formatMateriaPrimaDetalles, totalMateriaPrimaDetalles } from '../utils/materiaPrimaDetalles'
+import {
+  formatMateriaPrimaCOP,
+  formatMateriaPrimaDetalles,
+  totalMateriaPrimaDetalles,
+} from '../utils/materiaPrimaDetalles'
+import MateriaPrimaDetailsModal from '../components/MateriaPrimaDetailsModal.jsx'
 import Header from '../components/Header'
 import Sidebar from '../components/Sidebar'
 import DynamicModal from '../components/DynamicModal'
@@ -16,10 +21,10 @@ import ReasonModal from '../components/ReasonModal'
 import { StateFilterMenu } from '../components/StateFilters'
 import { clearRentabilidadCharts, updateAdminDashboardCharts, updateRentabilidadCharts } from './admin/adminCharts'
 import { AdminReportTable } from './admin/AdminReportViews'
-import AdminCostingTools from './admin/AdminCostingTools'
 import '../styles/dashboard.css'
 import '../styles/admin-panel.css'
 import { fetchFincas, createFinca, updateFinca, deleteFinca, changeFincaState } from '../services/fincaService'
+import { registerInventoryConsumption } from '../services/costeoService.js'
 import { fetchDashboardForFinca } from '../services/dashboardService'
 import { fetchCultivosPorFinca, fetchTiposCultivo, fetchEstados, createCultivo, updateCultivo, deleteCultivo, fetchCultivoDetalle, fetchCategoriasCosto, fetchSubcategoriasPorCategoria, fetchEstadosPago, fetchUnidadesMedida, fetchTiposPrecio, fetchEtapaEnProcesoPorCultivo, fetchEtapasPorCultivo, validateCultivoForCost, createCosto, updateCosto, deleteCosto, fetchCostosPorFinca, fetchCosechasPorCultivo, createCosecha, updateCosecha, deleteCosecha, fetchAllEtapasCatalog, createEtapaForCultivo, updateEtapaForCultivo, deleteEtapaForCultivo, changeCostoState, changeCultivoState, changeEtapaState, changeCosechaState } from '../services/cultivoService'
 import * as reportService from '../services/reportService'
@@ -1046,7 +1051,7 @@ export default function AdminPanel() {
         // Cargar estados para obtener información
         const estadosResponse = await fetchEstados()
         const estadosArr = estadosResponse?.success ? estadosResponse.data : Array.isArray(estadosResponse) ? estadosResponse : estadosResponse?.data || []
-        const estadoEnProceso = estadosArr.find((e) => e.nombre?.toLowerCase() === 'en proceso')
+        const estadoEnProceso = estadosArr.find((e) => e.nombre?.trim().toLowerCase() === 'en proceso')
 
         const willSetEnProceso = idestado === estadoEnProceso?.id && editingEtapa.idestado !== estadoEnProceso?.id
 
@@ -1410,7 +1415,8 @@ export default function AdminPanel() {
   const countCultivosActivosByFinca = (fincaId) => {
     return cultivosData.filter((cultivo) => {
       const belongsToFinca = String(cultivo.idfinca || cultivo.fincaId) === String(fincaId)
-      const isActivo = cultivo.idestado === 1 || (cultivo.estado && cultivo.estado.toLowerCase() !== 'finalizado')
+      const estado = String(cultivo.estado || '').trim().toLowerCase()
+      const isActivo = estado !== '' && estado !== 'finalizado'
       return belongsToFinca && isActivo
     }).length
   }
@@ -2320,6 +2326,7 @@ export default function AdminPanel() {
           successMessage = `Usuario "${response.data.nombre} ${response.data.apellidos}" actualizado exitosamente`
         } else {
           // Crea un nuevo usuario.
+          payload.modulos = Array.isArray(normalizedFormData.modulos) ? normalizedFormData.modulos : ['costos']
           const response = await createUser(payload)
           if (!response.success) {
             showNotification(response.message, 'error')
@@ -2393,6 +2400,9 @@ export default function AdminPanel() {
 
           // Recargar cultivos de la finca actual y actualizar el conteo de cultivos activos.
           await fetchCultivosData(String(idfinca))
+          if (editingCultivo && Number(editingCultivo.id) === Number(selectedCultivoId)) {
+            await refreshCultivoDetalleData()
+          }
           setFincasRefresh((prev) => prev + 1)
           const cultivosResponse = await fetchCultivosEnProceso()
           const cultivosArray = cultivosResponse?.success
@@ -2415,7 +2425,11 @@ export default function AdminPanel() {
       }
       case MODAL_TYPES.COSTO: {
         const descripcion = normalizedFormData.descripcion?.trim() || null
-        const valor = parseMoneyValue(normalizedFormData.valor)
+        const selectedCategory = (modalFieldOptions.categoria || []).find(
+          (category) => String(category.value) === String(normalizedFormData.categoria)
+        )
+        const isMateriaPrima = String(selectedCategory?.label || '').trim().toLowerCase() === 'materia prima'
+        const valor = isMateriaPrima ? null : parseMoneyValue(normalizedFormData.valor)
         const idsubcategoria = Number(normalizedFormData.subcategoria)
         const idestado_pago = Number(normalizedFormData.estado_pago)
         const isGeneralCostSection = activeSection === 'costos'
@@ -2432,7 +2446,7 @@ export default function AdminPanel() {
           return
         }
 
-        if (Number.isNaN(valor) || valor <= 0 || valor > 100000000000) {
+        if (!isMateriaPrima && (Number.isNaN(valor) || valor <= 0 || valor > 100000000000)) {
           showNotification('El valor debe ser un monto COP válido mayor a 0', 'error')
           playError()
           return
@@ -2445,97 +2459,133 @@ export default function AdminPanel() {
         }
 
         try {
-          if (editingCosto) {
-            const response = await updateCosto(editingCosto.id, {
+          if (isMateriaPrima) {
+            if (editingCosto) {
+              showNotification('Los costos de Materia Prima asociados a inventario no se pueden editar', 'error')
+              return
+            }
+            if (isGeneralCostSection) {
+              showNotification('Materia Prima debe asociarse a un cultivo desde su sección de costos, no como costo general', 'error')
+              return
+            }
+            if (!selectedCultivoId || normalizedFormData.detallesValid !== true) {
+              showNotification('Selecciona un cultivo y salidas de Kardex con cantidades válidas', 'error')
+              return
+            }
+            const cultivo = cultivos.find((crop) => Number(crop.id) === Number(selectedCultivoId))
+            if (!cultivo?.idfinca) {
+              showNotification('No se pudo determinar la finca del cultivo seleccionado', 'error')
+              return
+            }
+            const result = await registerInventoryConsumption({
+              fincaId: Number(cultivo.idfinca),
+              cultivoId: Number(selectedCultivoId),
+              subcategoriaId: idsubcategoria,
+              estadoPagoId: idestado_pago,
+              detalles: normalizedFormData.detalles.map((detail) => ({
+                idKardex: Number(detail.idKardex),
+                cantidad: Number(detail.cantidad),
+              })),
               descripcion,
-              valor,
-              idsubcategoria,
-              idestado_pago,
             })
-
-            if (!response || response.success === false) {
-              const errorText = response?.message || 'No fue posible actualizar el costo'
-              showNotification(errorText, 'error')
-              return
+            if (!result?.costoId) {
+              throw new Error('No se recibió la confirmación del costo de Materia Prima.')
             }
-
-            successMessage = 'Costo actualizado exitosamente'
-            setEditingCosto(null)
-            setFincasRefresh((prev) => prev + 1)
-          } else if (isGeneralCostSection) {
-            if (!fincaId) {
-              showNotification('Selecciona una finca para registrar el costo', 'error')
-              return
-            }
-
-            const respuesta = await createCosto({
-              descripcion,
-              valor,
-              idcultivo: null,
-              idetapa_cultivo: null,
-              idusuario: Number(session.id),
-              idsubcategoria,
-              idfinca: Number(fincaId),
-              idestado_pago,
-            })
-
-            if (!respuesta || respuesta.success === false) {
-              const errorText = respuesta?.message || 'No fue posible crear el costo'
-              showNotification(errorText, 'error')
-              return
-            }
-
-            successMessage = 'Costo agregado exitosamente'
+            successMessage = 'Costo de Materia Prima registrado y asociado a las salidas de inventario'
             setFincasRefresh((prev) => prev + 1)
           } else {
-            if (!selectedCultivoId) {
-              showNotification('Debes seleccionar un cultivo primero', 'error')
-              return
-            }
-
-            const cultivo = cultivos.find((c) => c.id === selectedCultivoId)
-            if (!cultivo) {
-              showNotification('El cultivo seleccionado no se encontró', 'error')
-              return
-            }
-
-            const etapaEnProceso = await fetchEtapaEnProcesoPorCultivo(selectedCultivoId)
-            const etapaId = etapaEnProceso?.idetapacultivo ? Number(etapaEnProceso.idetapacultivo) : null
-
-            if (!etapaId) {
-              await Swal.fire({
-                title: 'AgroGestion',
-                text: 'No puede registrar el costo porque el cultivo no tiene una etapa activa en proceso',
-                icon: 'warning',
-                confirmButtonText: 'Aceptar',
-                confirmButtonColor: '#dc3545',
-                cancelButtonColor: '#ffffff',
-                customClass: {
-                  confirmButton: 'custom-confirm-btn',
-                },
+            if (editingCosto) {
+              const response = await updateCosto(editingCosto.id, {
+                descripcion,
+                valor,
+                idsubcategoria,
+                idestado_pago,
               })
-              return
+
+              if (!response || response.success === false) {
+                const errorText = response?.message || 'No fue posible actualizar el costo'
+                showNotification(errorText, 'error')
+                return
+              }
+
+              successMessage = 'Costo actualizado exitosamente'
+              setEditingCosto(null)
+              setFincasRefresh((prev) => prev + 1)
+            } else if (isGeneralCostSection) {
+              if (!fincaId) {
+                showNotification('Selecciona una finca para registrar el costo', 'error')
+                return
+              }
+
+              const respuesta = await createCosto({
+                descripcion,
+                valor,
+                idcultivo: null,
+                idetapa_cultivo: null,
+                idusuario: Number(session.id),
+                idsubcategoria,
+                idfinca: Number(fincaId),
+                idestado_pago,
+              })
+
+              if (!respuesta || respuesta.success === false) {
+                const errorText = respuesta?.message || 'No fue posible crear el costo'
+                showNotification(errorText, 'error')
+                return
+              }
+
+              successMessage = 'Costo agregado exitosamente'
+              setFincasRefresh((prev) => prev + 1)
+            } else {
+              if (!selectedCultivoId) {
+                showNotification('Debes seleccionar un cultivo primero', 'error')
+                return
+              }
+
+              const cultivo = cultivos.find((crop) => Number(crop.id) === Number(selectedCultivoId))
+              if (!cultivo) {
+                showNotification('El cultivo seleccionado no se encontró', 'error')
+                return
+              }
+
+              const etapaEnProceso = await fetchEtapaEnProcesoPorCultivo(selectedCultivoId)
+              const etapaId = etapaEnProceso?.idetapacultivo ? Number(etapaEnProceso.idetapacultivo) : null
+
+              if (!etapaId) {
+                await Swal.fire({
+                  title: 'AgroGestion',
+                  text: 'No puede registrar el costo porque el cultivo no tiene una etapa activa en proceso',
+                  icon: 'warning',
+                  confirmButtonText: 'Aceptar',
+                  confirmButtonColor: '#dc3545',
+                  cancelButtonColor: '#ffffff',
+                  customClass: {
+                    confirmButton: 'custom-confirm-btn',
+                  },
+                })
+                return
+              }
+
+              const respuesta = await createCosto({
+                descripcion,
+                valor,
+                idcultivo: selectedCultivoId,
+                idetapa_cultivo: etapaId,
+                idusuario: Number(session.id),
+                idsubcategoria,
+                idfinca: Number(cultivo.idfinca),
+                idestado_pago,
+              })
+
+              if (!respuesta || respuesta.success === false) {
+                const errorText = respuesta?.message || 'No fue posible crear el costo'
+                showNotification(errorText, 'error')
+                return
+              }
+
+              successMessage = 'Costo agregado exitosamente'
+              setFincasRefresh((prev) => prev + 1)
             }
-
-            const respuesta = await createCosto({
-              descripcion,
-              valor,
-              idcultivo: selectedCultivoId,
-              idetapa_cultivo: etapaId,
-              idusuario: Number(session.id),
-              idsubcategoria,
-              idfinca: Number(cultivo.idfinca),
-              idestado_pago,
-            })
-
-            if (!respuesta || respuesta.success === false) {
-              const errorText = respuesta?.message || 'No fue posible crear el costo'
-              showNotification(errorText, 'error')
-              return
-            }
-
-            successMessage = 'Costo agregado exitosamente'
-            setFincasRefresh((prev) => prev + 1)
           }
 
           if (activeSection === 'costos') {
@@ -2549,7 +2599,7 @@ export default function AdminPanel() {
           await refreshCultivoDetalleData()
         } catch (error) {
           console.error('Error guardando costo:', error)
-          const errMsg = error?.response?.data?.message || 'Error al guardar el costo'
+          const errMsg = error?.response?.data?.message || error?.message || 'Error al guardar el costo'
           showNotification(errMsg, 'error')
           return
         }
@@ -2788,6 +2838,8 @@ export default function AdminPanel() {
   const detalleCultivo = selectedCultivoId ? Agro.getDetalleCultivo(selectedCultivoId) : null
   const cultivoSeleccionado = selectedCultivoId ? cultivos.find((c) => c.id === selectedCultivoId) : null
   const isSelectedCultivoActivo = cultivoSeleccionado?.estado_registro === 'ACTIVO'
+  const isSelectedCultivoFinalizado = String(cultivoSeleccionado?.estado || '').trim().toLowerCase() === 'finalizado'
+  const canAddCultivoRecords = isSelectedCultivoActivo && !isSelectedCultivoFinalizado
   const [etapasCultivo, setEtapasCultivo] = useState([])
   const [isLoadingEtapas, setIsLoadingEtapas] = useState(false)
   // (replaced by DynamicModal usage)
@@ -3409,6 +3461,12 @@ export default function AdminPanel() {
         }
         fieldOptions={modalFieldOptions}
         initialData={dynamicModalInitialData}
+        materiaPrimaContext={{
+          fincaId: activeSection === 'costos'
+            ? null
+            : (cultivos.find((crop) => Number(crop.id) === Number(selectedCultivoId))?.idfinca || fincaId),
+          cultivoId: activeSection === 'costos' ? null : selectedCultivoId,
+        }}
         onFieldChange={(name, value) => {
           if (dynamicModalType === MODAL_TYPES.COSTO) {
             handleCostoFieldChange(name, value)
@@ -3624,21 +3682,6 @@ export default function AdminPanel() {
                 )}
               </div>
             </div>
-            <AdminCostingTools
-              fincaId={fincaId}
-              filterOptions={filterOptions}
-              onNotify={showNotification}
-              onSaved={async (cultivoId) => {
-                const [fincaCosts, cropCosts] = await Promise.all([
-                  fetchCostosPorFinca(Number(fincaId)),
-                  fetchCultivoDetalle(cultivoId),
-                ])
-                setCostosGenerales(Array.isArray(fincaCosts) ? fincaCosts : [])
-                if (Number(selectedCultivoId) === Number(cultivoId)) {
-                  setDetalleCostos(Array.isArray(cropCosts) ? cropCosts : [])
-                }
-              }}
-            />
           </section>
 
           {/* Sección de gestión de fincas: lista, búsqueda y botones de acción. */}
@@ -3801,12 +3844,13 @@ export default function AdminPanel() {
               <table className="data-table">
                 <thead>
                   <tr className="table-title-row">
-                    <th colSpan={4}>Usuarios Registrados</th>
+                    <th colSpan={5}>Usuarios Registrados</th>
                   </tr>
                   <tr>
                     <th>Nombre</th>
                     <th>Email</th>
                     <th>Rol</th>
+                    <th>Módulos</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -3828,6 +3872,11 @@ export default function AdminPanel() {
                         <td data-field="nombre">{`${usuario.nombre} ${usuario.apellidos || ''}`.trim()}</td>
                         <td data-field="email">{usuario.email}</td>
                         <td data-field="rol">{usuario.rol}</td>
+                        <td data-field="modulos">
+                          {(usuario.modulos || [])
+                            .map((modulo) => modulo === 'costos' ? 'Costos' : modulo === 'inventario' ? 'Inventario' : modulo)
+                            .join(', ') || '--'}
+                        </td>
                         <td data-field="acciones">
                           <div className="action-buttons">
                             {usuariosEstado === 'ACTIVO' ? (
@@ -4099,11 +4148,20 @@ export default function AdminPanel() {
                     </div>
                   </div>
                 )}
+                {isSelectedCultivoFinalizado && (
+                  <div className="detalle-cultivo-readonly-note">
+                    <div className="readonly-note-icon">🔒</div>
+                    <div className="readonly-note-content">
+                      <strong>Este cultivo está finalizado.</strong>
+                      <p>No se pueden agregar registros nuevos. Las etapas que estaban en proceso se cerraron automáticamente.</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="info-section" id="etapas-section">
                   <div className="section-info-header">
                     <h3>Etapas</h3>
-                    {isSelectedCultivoActivo && (
+                    {canAddCultivoRecords && (
                       <button type="button" className="btn-add btn-primary" onClick={openAddEtapaModal}>
                         + Agregar Nueva Etapa
                       </button>
@@ -4171,7 +4229,7 @@ export default function AdminPanel() {
                 <div className="info-section" id="cosechas-section">
                   <div className="section-info-header">
                     <h3>Cosechas</h3>
-                    {isSelectedCultivoActivo && (
+                    {canAddCultivoRecords && (
                       <button type="button" className="btn-add btn-primary" onClick={handleOpenAgregarCosecha}>
                         + Agregar Nueva Cosecha
                       </button>
@@ -4284,7 +4342,7 @@ export default function AdminPanel() {
                 <div className="info-section" id="costos-cultivo-section">
                   <div className="section-info-header">
                     <h3>Costos del Cultivo</h3>
-                    {isSelectedCultivoActivo && (
+                    {canAddCultivoRecords && (
                       <button type="button" className="btn-add btn-primary" onClick={() => handleOpenDynamicModal(MODAL_TYPES.COSTO)}>
                         + Agregar Nuevo Costo
                       </button>
@@ -4437,12 +4495,15 @@ export default function AdminPanel() {
                               const parsed = parseMonetaryString(costo.valor)
                               if (!Number.isNaN(parsed)) valorNum = parsed
                             }
-                            const valorTexto = valorNum != null ? Agro.formatCOP(valorNum) : (costo.valor || '--')
+                            const valorTexto = valorNum != null
+                              ? (isMp ? formatMateriaPrimaCOP(valorNum) : Agro.formatCOP(valorNum))
+                              : (costo.valor || '--')
                             return (
                               <tr
                                 key={costo.id || i}
                                 className={`data-item ${isMp ? 'clickeable-materia-prima' : ''}`}
                                 style={{ cursor: isMp ? 'pointer' : undefined }}
+                                title={isMp ? 'Haz clic para ver el detalle de productos y subtotales.' : undefined}
                                 onClick={(e) => {
                                   if (!isMp) return
                                   if (e.target.closest('.action-buttons')) return
@@ -4508,7 +4569,10 @@ export default function AdminPanel() {
                                     {costo.etapa || '--'}
                                   </span>
                                 </td>
-                                <td data-field="descripcion">{costo.descripcion || '--'}</td>
+                                <td data-field="descripcion">
+                                  {costo.descripcion || '--'}
+                                  {isMp ? <small className="mp-cost-details-hint">Ver detalle del consumo</small> : null}
+                                </td>
                                 <td data-field="valor">{valorTexto}</td>
                                 <td data-field="estado">
                                   <span className={`detalle-cultivo-badge-estado detalle-cultivo-badge-estado-${estadoLower}`}>
@@ -4933,7 +4997,7 @@ export default function AdminPanel() {
                     </tr>
                   ) : visibleCostosGenerales.length ? (
                     visibleCostosGenerales.map((costo) => {
-                      const isMp = String(costo.categoria || '').toLowerCase() === 'materia prima'
+                      const isMp = String(costo.categoria || '').trim().toLowerCase() === 'materia prima'
                       const categoryKey = normalizeKey(costo.categoria || 'sin subcategoria').replace(/\s+/g, '-')
                       const subcategoryKey = normalizeKey(costo.subcategoria || 'sin subcategoria').replace(/\s+/g, '-')
                       const categoriaClass = `cg-badge-categoria cat-${categoryKey}`
@@ -4946,6 +5010,7 @@ export default function AdminPanel() {
                           key={costo.id}
                           className={`data-item ${isMp ? 'clickeable-materia-prima' : ''}`}
                           style={{ cursor: isMp ? 'pointer' : undefined }}
+                          title={isMp ? 'Haz clic para ver el detalle de productos y subtotales.' : undefined}
                           onClick={(e) => {
                             if (!isMp) return
                             if (e.target.closest('.action-buttons')) return
@@ -4967,8 +5032,13 @@ export default function AdminPanel() {
                           <td data-field="cultivo">
                             <span className={cultivoClass}>{capitalizeWords(costo.cultivo || 'General')}</span>
                           </td>
-                          <td data-field="descripcion">{costo.descripcion || '--'}</td>
-                          <td data-field="valor">{formatPrecioValue(costo.valor)}</td>
+                          <td data-field="descripcion">
+                            {costo.descripcion || '--'}
+                            {isMp ? <small className="mp-cost-details-hint">Ver detalle del consumo</small> : null}
+                          </td>
+                          <td data-field="valor">
+                            {isMp ? formatMateriaPrimaCOP(costo.valor) : formatPrecioValue(costo.valor)}
+                          </td>
                           <td data-field="estado_pago">
                             <span className={estadoClass}>{costo.estado_pago || '--'}</span>
                           </td>
@@ -5147,37 +5217,15 @@ export default function AdminPanel() {
           setActiveUsuarioId(null)
         }}
       />
-      <DetailTableModal
+      <MateriaPrimaDetailsModal
         isOpen={elementosCultivo.open}
-        title="Información del Inventario"
-        titleId="inventario-cultivo-modal-title"
-        columns={[
-          { key: 'producto', label: 'Producto' },
-          { key: 'referencia', label: 'Referencia Kardex' },
-          { key: 'cantidad', label: 'Cantidad' },
-          { key: 'unidad', label: 'Unidad' },
-          { key: 'costoUnitarioFmt', label: 'Costo unitario' },
-          { key: 'subtotalFmt', label: 'Subtotal' },
-        ]}
         rows={elementosCultivo.rows}
-        emptyMessage="No hay detalles de Kardex registrados para este costo."
         total={elementosCultivo.total}
         onClose={() => setElementosCultivo({ open: false, rows: [], total: 0 })}
       />
-      <DetailTableModal
+      <MateriaPrimaDetailsModal
         isOpen={elementosGenerales.open}
-        title="Información del Inventario"
-        titleId="inventario-general-modal-title"
-        columns={[
-          { key: 'producto', label: 'Producto' },
-          { key: 'referencia', label: 'Referencia Kardex' },
-          { key: 'cantidad', label: 'Cantidad' },
-          { key: 'unidad', label: 'Unidad' },
-          { key: 'costoUnitarioFmt', label: 'Costo unitario' },
-          { key: 'subtotalFmt', label: 'Subtotal' },
-        ]}
         rows={elementosGenerales.rows}
-        emptyMessage="No hay detalles de Kardex registrados para este costo."
         total={elementosGenerales.total}
         onClose={() => setElementosGenerales({ open: false, rows: [], total: 0 })}
       />

@@ -1,6 +1,14 @@
-import { formatCOP } from '../services/agroData'
+export function formatMateriaPrimaCOP(value) {
+  const amount = Number(value)
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(amount) ? amount : 0)
+}
 
-function formatQuantity(value) {
+export function formatMateriaPrimaQuantity(value) {
   const quantity = Number(value)
   return Number.isFinite(quantity)
     ? quantity.toLocaleString('es-CO', { maximumFractionDigits: 6 })
@@ -12,10 +20,10 @@ export function formatMateriaPrimaDetalles(details = []) {
     id: detail.idKardex,
     producto: detail.producto || '--',
     referencia: detail.referencia || `Salida #${detail.idKardex}`,
-    cantidad: formatQuantity(detail.cantidad),
+    cantidad: formatMateriaPrimaQuantity(detail.cantidad),
     unidad: detail.unidad || '--',
-    costoUnitarioFmt: formatCOP(detail.costoUnitario),
-    subtotalFmt: formatCOP(detail.subtotal),
+    costoUnitarioFmt: formatMateriaPrimaCOP(detail.costoUnitario),
+    subtotalFmt: formatMateriaPrimaCOP(detail.subtotal),
   }))
 }
 

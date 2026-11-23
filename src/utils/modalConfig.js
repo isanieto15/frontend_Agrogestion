@@ -93,6 +93,27 @@ export const getModalConfig = (type) => {
           required: true,
         },
         {
+          name: 'modulos',
+          label: 'Módulos de acceso',
+          type: 'checkbox-group',
+          multiple: true,
+          defaultValue: ['costos'],
+          options: [
+            {
+              value: 'costos',
+              label: 'Módulo Costos',
+              description: 'Acceso a la gestión de cultivos y costos.',
+            },
+            {
+              value: 'inventario',
+              label: 'Módulo Inventario',
+              description: 'Acceso al área de bodega e inventario.',
+            },
+          ],
+          required: true,
+          createOnly: true,
+        },
+        {
           name: 'fincas',
           label: 'Fincas Asignadas',
           type: 'multiselect-search',
@@ -310,7 +331,10 @@ export const createInitialFormState = (type) => {
  * Valida si un campo es válido basado en su configuración
  */
 export const validateField = (field, value) => {
-  if (field.required && !value) {
+  if (
+    field.required &&
+    (!value || (field.multiple && Array.isArray(value) && value.length === 0))
+  ) {
     return `${field.label} es requerido`
   }
 

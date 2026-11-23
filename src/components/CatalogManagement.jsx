@@ -26,7 +26,7 @@ function getErrorMessage(error, fallback) {
 function isProtectedCultivationStatus(catalogKey, item) {
   const name = String(item.nombre || '').trim().toLowerCase();
   return catalogKey === 'estados-cultivo'
-    && (Number(item.id) === 1 || name.startsWith('finaliz'));
+    && (name === 'en proceso' || name === 'finalizado');
 }
 
 export default function CatalogManagement() {

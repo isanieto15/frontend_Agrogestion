@@ -14,3 +14,4 @@ yarn-error.log*
 *.log
 .vite/
 .env
+.env.local

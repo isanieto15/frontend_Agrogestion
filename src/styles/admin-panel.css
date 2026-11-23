@@ -2014,6 +2014,14 @@ html.dark-mode .cg-badge-subcategoria {
     box-shadow: inset 0 0 0 2px var(--cat-materia-prima);
 }
 
+.mp-cost-details-hint {
+    display: block;
+    margin-top: 3px;
+    color: #1565c0;
+    font-size: 0.72rem;
+    font-weight: 650;
+}
+
 /* Botón de cerrar elementos */
 .btn-close-elements {
     background-color: var(--danger);
@@ -2384,6 +2392,10 @@ html.dark-mode .data-table tbody tr.clickeable-materia-prima:hover {
 html.dark-mode .data-table tbody tr.clickeable-materia-prima.activo {
     background-color: rgba(22, 160, 133, 0.25);
     box-shadow: inset 0 0 0 2px rgba(22, 160, 133, 0.5);
+}
+
+html.dark-mode .mp-cost-details-hint {
+    color: #9dc8ff;
 }
 
 html.dark-mode .data-table tbody tr.usuario-clickeable:hover {

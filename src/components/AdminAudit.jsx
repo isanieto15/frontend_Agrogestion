@@ -433,6 +433,7 @@ export default function AdminAudit() {
                 </td>
                 <td>
                   <strong>{ENTITY_LABELS[event.entidad] || event.entidad}</strong>
+                  {event.cultivo && <small>Cultivo: {event.cultivo}</small>}
                   <small>{event.registroId ? `Registro #${event.registroId}` : 'Sin identificador único'}</small>
                 </td>
                 <td className="audit-summary">{event.descripcion || 'Operación registrada correctamente.'}</td>
@@ -489,6 +490,7 @@ export default function AdminAudit() {
               <div><dt>Fecha y hora</dt><dd>{formatDateTime(selected.fecha)}</dd></div>
               <div><dt>Funcionalidad</dt><dd>{MODULE_LABELS[selected.modulo] || selected.modulo}</dd></div>
               <div><dt>Registro afectado</dt><dd>{ENTITY_LABELS[selected.entidad] || selected.entidad}{selected.registroId ? ` #${selected.registroId}` : ''}</dd></div>
+              {selected.cultivo && <div><dt>Cultivo afectado</dt><dd>{selected.cultivo}</dd></div>}
               {selected.ipUsuario && <div><dt>Origen de la solicitud</dt><dd>{selected.ipUsuario}</dd></div>}
             </dl>
             <div className="audit-detail-reason">
