@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import * as Agro from '../services/agroData'
 import { loginUser, requestPasswordReset, verifyResetCode, recoverPassword } from '../services/authApi'
 import { setSession, setAccessToken } from '../services/authSession'
+import { fetchPasswordResetAvailability } from '../services/emailConfigService'
+import ModalCloseButton from '../components/ModalCloseButton.jsx'
 import { normalizeRole } from '../utils/normalizeRole'
 import '../styles/login.css'
 
@@ -37,6 +39,17 @@ export default function Login() {
   const [resetPassword, setResetPassword] = useState('')
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState('')
   const [codeValidMessage, setCodeValidMessage] = useState('')
+  const [resetEmailAvailable, setResetEmailAvailable] = useState(null)
+
+  useEffect(() => {
+    let active = true
+    fetchPasswordResetAvailability().then((result) => {
+      if (active) setResetEmailAvailable(Boolean(result.available))
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -317,7 +330,6 @@ export default function Login() {
                 justifyContent: 'center',
                 zIndex: 999,
               }}
-              onClick={handleCloseResetModal}
             >
               <div
                 className="modal-content"
@@ -332,28 +344,17 @@ export default function Login() {
                   boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
                   position: 'relative',
                 }}
-                onClick={(e) => e.stopPropagation()}
               >
-                <button
-                  type="button"
-                  onClick={handleCloseResetModal}
-                  style={{
-                    position: 'absolute',
-                    top: '16px',
-                    right: '16px',
-                    border: 'none',
-                    background: 'transparent',
-                    fontSize: '18px',
-                    cursor: 'pointer',
-                  }}
-                  aria-label="Cerrar"
-                >
-                  ✕
-                </button>
-                <h3 style={{ marginTop: 0, color: '#2f4f28' }}>Recuperar contraseña</h3>
+                <ModalCloseButton onClose={handleCloseResetModal} />
+                <h3 style={{ marginTop: 0, paddingRight: '52px', color: '#2f4f28' }}>Recuperar contraseña</h3>
                 <p style={{ marginBottom: '24px', lineHeight: '1.5' }}>
                   Ingresa tu correo electrónico y, si está registrado, te enviaremos un código de 6 dígitos válido por 5 minutos.
                 </p>
+                {resetEmailAvailable === false ? (
+                  <p role="status" style={{ marginTop: '-12px', marginBottom: '20px', color: '#8a5a00', fontSize: '13px' }}>
+                    Si el problema continúa, contacta al administrador.
+                  </p>
+                ) : null}
 
                 {resetStep === 'email' && (
                   <>

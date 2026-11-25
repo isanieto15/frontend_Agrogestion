@@ -12,6 +12,7 @@ import {
   totalMateriaPrimaDetalles,
 } from '../utils/materiaPrimaDetalles'
 import MateriaPrimaDetailsModal from '../components/MateriaPrimaDetailsModal.jsx'
+import ModalCloseButton from '../components/ModalCloseButton.jsx'
 import Header from '../components/Header'
 import Sidebar from '../components/Sidebar'
 import DynamicModal from '../components/DynamicModal'
@@ -29,6 +30,12 @@ import { fetchDashboardForFinca } from '../services/dashboardService'
 import { fetchCultivosPorFinca, fetchTiposCultivo, fetchEstados, createCultivo, updateCultivo, deleteCultivo, fetchCultivoDetalle, fetchCategoriasCosto, fetchSubcategoriasPorCategoria, fetchEstadosPago, fetchUnidadesMedida, fetchTiposPrecio, fetchEtapaEnProcesoPorCultivo, fetchEtapasPorCultivo, validateCultivoForCost, createCosto, updateCosto, deleteCosto, fetchCostosPorFinca, fetchCosechasPorCultivo, createCosecha, updateCosecha, deleteCosecha, fetchAllEtapasCatalog, createEtapaForCultivo, updateEtapaForCultivo, deleteEtapaForCultivo, changeCostoState, changeCultivoState, changeEtapaState, changeCosechaState } from '../services/cultivoService'
 import * as reportService from '../services/reportService'
 import { filterCostsByCategoryId } from '../utils/costFilters'
+import {
+  fetchAdminEmailConfig,
+  fetchPasswordResetAvailability,
+  saveAdminEmailConfig,
+  testAdminEmailConfig,
+} from '../services/emailConfigService'
 
 import { MODAL_TYPES, DEPARTAMENTOS, MUNICIPIOS_POR_DEPARTAMENTO, normalizeModalTextFields } from '../utils/modalConfig'
 import Swal from 'sweetalert2'
@@ -308,6 +315,8 @@ const COSTOS_GENERALES_ROWS = [
 ]
 
 function DetailTableModal({ isOpen, title, titleId, columns, rows, emptyMessage, total, onClose }) {
+  const bodyRef = useRef(null)
+
   useEffect(() => {
     if (!isOpen) return undefined
 
@@ -322,20 +331,17 @@ function DetailTableModal({ isOpen, title, titleId, columns, rows, emptyMessage,
   if (!isOpen) return null
 
   return (
-    <div
-      className="detail-modal-overlay"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
+    <div className="detail-modal-overlay">
       <section className="detail-modal-content" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="detail-modal-header">
           <h2 id={titleId}>{title}</h2>
-          <button type="button" className="detail-modal-close" onClick={onClose} aria-label="Cerrar">
-            ×
-          </button>
+          <ModalCloseButton
+            className="modal-close-button--header"
+            onClose={onClose}
+            scrollContainerRef={bodyRef}
+          />
         </div>
-        <div className="detail-modal-body">
+        <div ref={bodyRef} className="detail-modal-body">
           <div className="table-container">
             <table className="data-table">
               <thead>
@@ -386,6 +392,20 @@ export default function AdminPanel() {
     const stored = localStorage.getItem('darkModeEnabled')
     return stored !== null ? stored === 'true' : false
   })
+  const [emailRecoveryAvailable, setEmailRecoveryAvailable] = useState(null)
+  const [emailConfigDetails, setEmailConfigDetails] = useState(null)
+  const [emailConfigForm, setEmailConfigForm] = useState({
+    remitente: '',
+    host: 'smtp.gmail.com',
+    puerto: '465',
+    secure: true,
+    password: '',
+  })
+  const [emailConfigError, setEmailConfigError] = useState('')
+  const [emailConfigNotice, setEmailConfigNotice] = useState('')
+  const [emailConfigNoticeIsError, setEmailConfigNoticeIsError] = useState(false)
+  const [isSavingEmailConfig, setIsSavingEmailConfig] = useState(false)
+  const [isTestingEmailConfig, setIsTestingEmailConfig] = useState(false)
 
   // Estado local del componente administrado por React.
   // fincaId guarda la finca seleccionada actualmente.
@@ -541,6 +561,41 @@ export default function AdminPanel() {
       navigate('/', { replace: true })
     }
   }, [session, navigate])
+
+  useEffect(() => {
+    let active = true
+
+    const loadEmailSettings = async () => {
+      const [availability, config] = await Promise.all([
+        fetchPasswordResetAvailability(),
+        fetchAdminEmailConfig(),
+      ])
+      if (!active) return
+
+      setEmailRecoveryAvailable(Boolean(availability.available))
+      if (!config.success || !config.data) {
+        setEmailConfigError(config.message || 'No se pudo consultar la configuración de correo.')
+        return
+      }
+
+      setEmailConfigDetails(config.data)
+      setEmailConfigForm({
+        remitente: config.data.remitente || '',
+        host: config.data.host || 'smtp.gmail.com',
+        puerto: String(config.data.puerto || 465),
+        secure: config.data.secure !== false,
+        password: '',
+      })
+      setEmailConfigError(config.data.storageAvailable
+        ? ''
+        : 'La configuración requiere aplicar la migración 004-configuracion-correo.up.sql.');
+    }
+
+    loadEmailSettings()
+    return () => {
+      active = false
+    }
+  }, [])
 
   // Escucha el evento global de cambio de finca y actualiza el estado local.
   useEffect(() => {
@@ -3275,6 +3330,72 @@ export default function AdminPanel() {
     setActiveSection(sectionId)
   }
 
+  const refreshEmailConfig = async () => {
+    const result = await fetchAdminEmailConfig()
+    if (!result.success || !result.data) {
+      setEmailConfigError(result.message || 'No se pudo consultar la configuración de correo.')
+      return null
+    }
+
+    setEmailConfigDetails(result.data)
+    setEmailConfigForm((previous) => ({
+      ...previous,
+      remitente: result.data.remitente || '',
+      host: result.data.host || 'smtp.gmail.com',
+      puerto: String(result.data.puerto || 465),
+      secure: result.data.secure !== false,
+      password: '',
+    }))
+    setEmailConfigError(result.data.storageAvailable
+      ? ''
+      : 'La configuración requiere aplicar la migración 004-configuracion-correo.up.sql.')
+    return result.data
+  }
+
+  const refreshEmailRecoveryAvailability = async () => {
+    const result = await fetchPasswordResetAvailability()
+    setEmailRecoveryAvailable(Boolean(result.available))
+  }
+
+  const handleSaveEmailConfig = async (event) => {
+    event.preventDefault()
+    setEmailConfigNotice('')
+    setEmailConfigNoticeIsError(false)
+    setIsSavingEmailConfig(true)
+    const result = await saveAdminEmailConfig({
+      ...emailConfigForm,
+      puerto: Number(emailConfigForm.puerto),
+      usuario: emailConfigForm.remitente,
+    })
+    setIsSavingEmailConfig(false)
+
+    if (!result.success) {
+      setEmailConfigNotice(result.message || 'No se pudo guardar la configuración.')
+      setEmailConfigNoticeIsError(true)
+      return
+    }
+
+    setEmailConfigNotice(result.message || 'Configuración guardada.')
+    if (result.data) {
+      setEmailConfigDetails(result.data)
+      setEmailConfigForm((previous) => ({ ...previous, password: '' }))
+    }
+    await Promise.all([refreshEmailConfig(), refreshEmailRecoveryAvailability()])
+  }
+
+  const handleTestEmailConfig = async () => {
+    setEmailConfigNotice('')
+    setEmailConfigNoticeIsError(false)
+    setIsTestingEmailConfig(true)
+    const result = await testAdminEmailConfig()
+    setIsTestingEmailConfig(false)
+    setEmailConfigNoticeIsError(!result.success)
+    setEmailConfigNotice(result.message || (result.success
+      ? 'Correo de prueba enviado correctamente.'
+      : 'No se pudo enviar el correo de prueba.'))
+    await Promise.all([refreshEmailConfig(), refreshEmailRecoveryAvailability()])
+  }
+
   const openUnitConversions = () => {
     switchSection('dashboard')
     window.setTimeout(() => {
@@ -3510,6 +3631,28 @@ export default function AdminPanel() {
         />
 
         <div className="content-container">
+         {emailRecoveryAvailable === false ? (
+           <div
+             role="alert"
+             style={{
+               display: 'flex',
+               alignItems: 'center',
+               justifyContent: 'space-between',
+               gap: '16px',
+               padding: '14px 18px',
+               marginBottom: '18px',
+               borderRadius: '8px',
+               background: '#fff3cd',
+               color: '#664d03',
+             }}
+           >
+             <span>La recuperación por correo no está activa. Configúrala para que los administradores puedan recuperar su contraseña.</span>
+             <button type="button" className="btn-primary" onClick={() => switchSection('configuracion')}>
+               Configurar correo
+             </button>
+           </div>
+         ) : null}
+
           {/* Sección de dashboard general con indicadores clave, gráficos y alertas. */}
           <section id="dashboard-section" className={`content-section ${activeSection === 'dashboard' ? 'active' : ''}`}>
             {dashboardError ? (
@@ -5132,6 +5275,147 @@ export default function AdminPanel() {
                 </label>
               </div>
               {activeSection === 'configuracion' && <CatalogManagement />}
+            </div>
+
+            <div className="config-section" style={{ marginTop: '20px' }}>
+              <div className="config-card" style={{ display: 'block' }}>
+                <h3>Configuración de correo</h3>
+                <p>Configura el envío de códigos para recuperar contraseñas.</p>
+
+                {emailConfigDetails?.activo ? (
+                  <p role="status" style={{ color: '#237a3b', fontWeight: 600 }}>
+                    {emailConfigDetails.fuente === 'environment'
+                      ? 'Activo (variables de entorno)'
+                      : `Activo (último envío correcto: ${emailConfigDetails.ultimo_envio_ok
+                        ? new Date(emailConfigDetails.ultimo_envio_ok).toLocaleString('es-CO')
+                        : 'sin fecha registrada'})`}
+                  </p>
+                ) : emailConfigDetails?.respaldoActivo ? (
+                  <p role="status" style={{ color: '#237a3b', fontWeight: 600 }}>
+                    Activo (respaldo por variables de entorno)
+                  </p>
+                ) : emailConfigDetails?.ultimo_error ? (
+                  <p role="status" style={{ color: '#b42318', fontWeight: 600 }}>
+                    Con error: {emailConfigDetails.ultimo_error}
+                  </p>
+                ) : (
+                  <p role="status" style={{ color: '#8a5a00', fontWeight: 600 }}>
+                    Inactivo: falta probar
+                  </p>
+                )}
+                {emailConfigDetails?.respaldoActivo && emailConfigDetails?.ultimo_error ? (
+                  <p role="status" style={{ color: '#b42318' }}>
+                    La configuración guardada tiene un error: {emailConfigDetails.ultimo_error}
+                  </p>
+                ) : null}
+
+                {emailConfigError ? (
+                  <p role="alert" style={{ color: '#b42318' }}>{emailConfigError}</p>
+                ) : null}
+                {emailConfigNotice ? (
+                  <p
+                    role="status"
+                    style={{ color: emailConfigNoticeIsError ? '#b42318' : '#237a3b' }}
+                  >
+                    {emailConfigNotice}
+                  </p>
+                ) : null}
+
+                <form onSubmit={handleSaveEmailConfig}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+                    <label style={{ display: 'grid', gap: '6px' }}>
+                      Correo remitente
+                      <input
+                        type="email"
+                        autoComplete="email"
+                        value={emailConfigForm.remitente}
+                        onChange={(event) => setEmailConfigForm((previous) => ({
+                          ...previous,
+                          remitente: event.target.value,
+                        }))}
+                        required
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: '6px' }}>
+                      Contraseña de aplicación
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={emailConfigForm.password}
+                        onChange={(event) => setEmailConfigForm((previous) => ({
+                          ...previous,
+                          password: event.target.value,
+                        }))}
+                        placeholder={emailConfigDetails?.tieneClave ? 'Deja vacío para conservarla' : 'Contraseña de aplicación'}
+                      />
+                    </label>
+                  </div>
+                  <p style={{ fontSize: '13px', color: '#555', marginTop: '8px' }}>
+                    En Google, activa la verificación en dos pasos y genera una contraseña de aplicación de 16 caracteres. No uses tu contraseña normal de Gmail. Se aceptan espacios en la contraseña de aplicación.
+                  </p>
+
+                  <details style={{ margin: '16px 0' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Configuración avanzada</summary>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginTop: '12px' }}>
+                      <label style={{ display: 'grid', gap: '6px' }}>
+                        Host SMTP
+                        <input
+                          type="text"
+                          value={emailConfigForm.host}
+                          onChange={(event) => setEmailConfigForm((previous) => ({
+                            ...previous,
+                            host: event.target.value,
+                          }))}
+                          required
+                        />
+                      </label>
+                      <label style={{ display: 'grid', gap: '6px' }}>
+                        Puerto SMTP
+                        <input
+                          type="number"
+                          min="1"
+                          max="65535"
+                          value={emailConfigForm.puerto}
+                          onChange={(event) => setEmailConfigForm((previous) => ({
+                            ...previous,
+                            puerto: event.target.value,
+                          }))}
+                          required
+                        />
+                      </label>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
+                      <input
+                        type="checkbox"
+                        checked={emailConfigForm.secure}
+                        onChange={(event) => setEmailConfigForm((previous) => ({
+                          ...previous,
+                          secure: event.target.checked,
+                        }))}
+                      />
+                      Conexión segura (TLS implícito; normalmente puerto 465)
+                    </label>
+                  </details>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                    <button
+                      type="submit"
+                      className="btn-primary"
+                      disabled={isSavingEmailConfig || !emailConfigDetails?.storageAvailable}
+                    >
+                      {isSavingEmailConfig ? 'Guardando...' : 'Guardar'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={handleTestEmailConfig}
+                      disabled={isTestingEmailConfig || !emailConfigDetails?.storageAvailable || !emailConfigDetails?.tieneClave}
+                    >
+                      {isTestingEmailConfig ? 'Enviando...' : 'Enviar correo de prueba'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </section>
 

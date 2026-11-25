@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect } from 'react'
 import { getModalConfig, validateForm, validateField, normalizeModalTextFields } from '../utils/modalConfig'
 import MateriaPrimaConsumptionFields from './MateriaPrimaConsumptionFields.jsx'
+import ModalCloseButton from './ModalCloseButton.jsx'
 
 /**
  * Componente de modal dinámico que cambia su contenido según el tipo
@@ -205,12 +206,6 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
         zIndex: 999,
         pointerEvents: 'auto',
       }}
-      onMouseDown={(e) => {
-        // Close only when clicking directly on the overlay (outside modal content)
-        if (e.target === e.currentTarget) {
-          handleCancel()
-        }
-      }}
     >
       <div
         className="modal-content dynamic-modal-content"
@@ -231,9 +226,11 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
         onTouchStart={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
+        <ModalCloseButton onClose={handleCancel} />
         <h2
           style={{
             marginBottom: '30px',
+            paddingRight: '52px',
             color: 'var(--text-dark)',
             fontFamily: "var(--font-titulo, 'Playfair Display')",
           }}

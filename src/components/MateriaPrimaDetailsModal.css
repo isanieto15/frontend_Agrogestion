@@ -45,19 +45,6 @@
   font-size: 1.25rem;
 }
 
-.mp-details-modal__header button {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border: 0;
-  border-radius: 9px;
-  background: var(--bg-light, #f3f5f8);
-  color: var(--text-dark, #243044);
-  font-size: 1.7rem;
-  cursor: pointer;
-}
-
 .mp-details-modal__body {
   overflow: auto;
   padding: 20px 24px 24px;
@@ -133,7 +120,6 @@
   font-size: 1.2rem;
 }
 
-html.dark-mode .mp-details-modal__header button,
 html.dark-mode .mp-details-modal__table th {
   background: var(--bg-light, #252b34);
 }

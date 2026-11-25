@@ -2129,26 +2129,6 @@ html.dark-mode .cg-badge-subcategoria {
     font-size: 1.35rem;
 }
 
-.detail-modal-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 38px;
-    height: 38px;
-    flex: 0 0 auto;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-dark);
-    font-size: 1.6rem;
-    cursor: pointer;
-}
-
-.detail-modal-close:hover {
-    background: var(--danger-transparent);
-    color: var(--danger);
-}
-
 .detail-modal-body {
     overflow: auto;
     padding: 20px 24px 24px;
@@ -3141,6 +3121,7 @@ html.dark-mode .content-container::-webkit-scrollbar-thumb:hover {
   padding: 1.25rem;
   border-radius: 14px;
   background: #fff;
+  color: #28382e;
   box-shadow: 0 20px 60px rgb(0 0 0 / 25%);
 }
 
@@ -3148,6 +3129,7 @@ html.dark-mode .content-container::-webkit-scrollbar-thumb:hover {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
+  padding-right: 52px;
   margin-bottom: 1rem;
 }
 
@@ -3160,17 +3142,6 @@ html.dark-mode .content-container::-webkit-scrollbar-thumb:hover {
   color: #738178;
   font-size: 0.82rem;
   font-weight: 700;
-}
-
-.audit-close {
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  background: #edf3ee;
-  color: #2f4737;
-  font-size: 1.5rem;
-  cursor: pointer;
 }
 
 .audit-detail-meta {

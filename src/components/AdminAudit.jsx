@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchAuditEvent, fetchAuditEvents } from '../services/auditoriaService';
+import ModalCloseButton from './ModalCloseButton.jsx';
 
 const MODULE_LABELS = {
   CULTIVOS: 'Cultivos y etapas',
@@ -474,16 +475,14 @@ export default function AdminAudit() {
 
       {detailLoading && <div className="audit-detail-loading" role="status">Cargando detalle del evento…</div>}
       {selected && (
-        <div className="audit-modal-backdrop" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setSelected(null);
-        }}>
+        <div className="audit-modal-backdrop" role="presentation">
           <section className="audit-detail" role="dialog" aria-modal="true" aria-labelledby="audit-detail-title">
+            <ModalCloseButton onClose={() => setSelected(null)} />
             <header>
               <div>
                 <span className="audit-detail-kicker">Evento #{selected.id}</span>
                 <h3 id="audit-detail-title">{ACTION_LABELS[selected.accion] || selected.accion}</h3>
               </div>
-              <button type="button" className="audit-close" aria-label="Cerrar detalle" onClick={() => setSelected(null)}>×</button>
             </header>
             <dl className="audit-detail-meta">
               <div><dt>Realizado por</dt><dd>{selected.usuario}{selected.usuarioId ? ` (ID ${selected.usuarioId})` : ''}</dd></div>

@@ -1,8 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { formatMateriaPrimaCOP } from '../utils/materiaPrimaDetalles.js'
+import ModalCloseButton from './ModalCloseButton.jsx'
 import './MateriaPrimaDetailsModal.css'
 
 export default function MateriaPrimaDetailsModal({ isOpen, rows = [], total = 0, onClose }) {
+  const bodyRef = useRef(null)
+
   useEffect(() => {
     if (!isOpen) return undefined
 
@@ -17,12 +20,7 @@ export default function MateriaPrimaDetailsModal({ isOpen, rows = [], total = 0,
   if (!isOpen) return null
 
   return (
-    <div
-      className="mp-details-overlay"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
+    <div className="mp-details-overlay">
       <section
         className="mp-details-modal"
         role="dialog"
@@ -34,10 +32,14 @@ export default function MateriaPrimaDetailsModal({ isOpen, rows = [], total = 0,
             <span>Desglose del costo</span>
             <h2 id="mp-details-title">Consumo de Materia Prima</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Cerrar detalle">×</button>
+          <ModalCloseButton
+            className="modal-close-button--header"
+            onClose={onClose}
+            scrollContainerRef={bodyRef}
+          />
         </header>
 
-        <div className="mp-details-modal__body">
+        <div ref={bodyRef} className="mp-details-modal__body">
           <p>
             Este costo corresponde a las cantidades utilizadas de las siguientes salidas de inventario.
           </p>
