@@ -83,6 +83,14 @@ export const getModalConfig = (type) => {
           required: true,
         },
         {
+          name: 'contraseña',
+          label: 'Contraseña inicial',
+          type: 'password',
+          placeholder: 'Mínimo 8 caracteres',
+          required: true,
+          createOnly: true,
+        },
+        {
           name: 'rol',
           label: 'Rol',
           type: 'select',
@@ -111,7 +119,6 @@ export const getModalConfig = (type) => {
             },
           ],
           required: true,
-          createOnly: true,
         },
         {
           name: 'fincas',
@@ -371,16 +378,18 @@ export const validateField = (field, value) => {
 /**
  * Valida todo el formulario
  */
-export const validateForm = (type, formData) => {
+export const validateForm = (type, formData, isEditing = false) => {
   const config = getModalConfig(type)
   const errors = {}
 
-  config.fields.forEach((field) => {
-    const error = validateField(field, formData[field.name])
-    if (error) {
-      errors[field.name] = error
-    }
-  })
+  config.fields
+    .filter((field) => !(field.createOnly && isEditing) && !(field.editOnly && !isEditing))
+    .forEach((field) => {
+      const error = validateField(field, formData[field.name])
+      if (error) {
+        errors[field.name] = error
+      }
+    })
 
   return errors
 }

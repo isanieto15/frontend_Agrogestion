@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { getModalConfig, validateForm, validateField, normalizeModalTextFields } from '../utils/modalConfig'
 import MateriaPrimaConsumptionFields from './MateriaPrimaConsumptionFields.jsx'
 
@@ -150,7 +150,7 @@ export function DynamicModal({ isOpen, modalType, onClose, onSubmit, title, subm
     e.preventDefault()
 
     // Validar el formulario
-    const validationErrors = validateForm(modalType, formData)
+    const validationErrors = validateForm(modalType, formData, isEditing)
     if (isMateriaPrima) {
       delete validationErrors.valor
       if (isEditing) {

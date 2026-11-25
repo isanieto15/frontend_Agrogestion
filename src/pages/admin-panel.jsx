@@ -518,6 +518,7 @@ export default function AdminPanel() {
       apellidos: editingUser.apellidos || '',
       correo: editingUser.email || '',
       rol: editingUser.rol?.toLowerCase() || '',
+      modulos: Array.isArray(editingUser.modulos) ? editingUser.modulos : ['costos'],
       fincas: Array.isArray(editingUser.fincas) ? editingUser.fincas.map(Number).filter(Boolean) : [],
       cultivos: Array.isArray(editingUser.cultivos) ? editingUser.cultivos.map(Number).filter(Boolean) : [],
     }
@@ -2308,7 +2309,9 @@ export default function AdminPanel() {
           nombre: normalizedFormData.nombre || '',
           apellidos: normalizedFormData.apellidos || '',
           correo: normalizedFormData.correo || '',
+          ...(!editingUser ? { contraseña: normalizedFormData.contraseña } : {}),
           rol: normalizedFormData.rol || '',
+          modulos: Array.isArray(normalizedFormData.modulos) ? normalizedFormData.modulos : ['costos'],
           fincas: Array.isArray(normalizedFormData.fincas) ? normalizedFormData.fincas.map(Number).filter(Boolean) : [],
           cultivos: Array.isArray(normalizedFormData.cultivos) ? normalizedFormData.cultivos.map(Number).filter(Boolean) : [],
         }
@@ -2335,7 +2338,7 @@ export default function AdminPanel() {
           }
 
           setUsers((prev) => [...prev, response.data])
-          successMessage = `Usuario "${response.data.nombre} ${response.data.apellidos}" agregado. Envíale un código de restablecimiento para que defina su contraseña.`
+          successMessage = `Usuario "${response.data.nombre} ${response.data.apellidos}" agregado. Comparte su contraseña inicial por un medio seguro.`
         }
         break
       }
@@ -3844,13 +3847,14 @@ export default function AdminPanel() {
               <table className="data-table">
                 <thead>
                   <tr className="table-title-row">
-                    <th colSpan={5}>Usuarios Registrados</th>
+                    <th colSpan={6}>Usuarios Registrados</th>
                   </tr>
                   <tr>
                     <th>Nombre</th>
                     <th>Email</th>
                     <th>Rol</th>
                     <th>Módulos</th>
+                    <th>Contraseña</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -3877,21 +3881,27 @@ export default function AdminPanel() {
                             .map((modulo) => modulo === 'costos' ? 'Costos' : modulo === 'inventario' ? 'Inventario' : modulo)
                             .join(', ') || '--'}
                         </td>
+                        <td data-field="contraseña">
+                          <span title="Las contraseñas no se pueden consultar; solo restablecer.">Protegida</span>
+                          {usuariosEstado === 'ACTIVO' && (
+                            <button
+                              type="button"
+                              className="btn-icon"
+                              title="Enviar código de restablecimiento"
+                              aria-label={`Enviar código de restablecimiento a ${usuario.email}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRequestUserPasswordReset(usuario)
+                              }}
+                            >
+                              {'\uD83D\uDD11'}
+                            </button>
+                          )}
+                        </td>
                         <td data-field="acciones">
                           <div className="action-buttons">
                             {usuariosEstado === 'ACTIVO' ? (
                               <>
-                                <button
-                                  type="button"
-                                  className="btn-icon"
-                                  title="Enviar código de restablecimiento"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleRequestUserPasswordReset(usuario)
-                                  }}
-                                >
-                                  {'\uD83D\uDD11'}
-                                </button>
                                 <button
                                   type="button"
                                   className="btn-icon btn-edit"
